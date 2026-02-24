@@ -33,7 +33,6 @@ use crate::{
     state::AppState,
     type_safety::parser::parse_json_spec,
     type_safety::{generate_openapi, to_json, to_yaml},
-    dependency,
 };
 
 pub(crate) fn db_internal_error(operation: &str, err: sqlx::Error) -> ApiError {
@@ -714,6 +713,10 @@ pub async fn create_contract_version(
     tx.commit()
         .await
         .map_err(|err| db_internal_error("commit contract version", err))?;
+
+    state.cache.invalidate_abi(&contract_id).await;
+    state.cache.invalidate_abi(&contract_uuid.to_string()).await;
+    state.cache.invalidate_abi(&format!("{}@{}", contract_id, req.version)).await;
 
     // Post-commit dependency analysis
     let detected_deps = dependency::detect_dependencies_from_abi(&req.abi);

@@ -12,6 +12,7 @@ import {
   Globe,
   Tag,
   GitCompare,
+  FlaskConical,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
@@ -22,6 +23,7 @@ import Navbar from "@/components/Navbar";
 import MaintenanceBanner from "@/components/MaintenanceBanner";
 import CustomMetricsPanel from "@/components/CustomMetricsPanel";
 import DeprecationBanner from "@/components/DeprecationBanner";
+import ReleaseNotesPanel from "@/components/ReleaseNotesPanel";
 
 const NETWORKS: Network[] = ["mainnet", "testnet", "futurenet"];
 
@@ -282,8 +284,23 @@ function ContractDetailsContent() {
             </div>
           </Link>
 
+          {/* SDK Compatibility Testing link (Issue #261) */}
+          <Link
+            href={`/contracts/${contract.id}/compatibility-testing`}
+            className="flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 text-gray-700 dark:text-gray-300 hover:text-purple-700 dark:hover:text-purple-300 transition-all group"
+          >
+            <FlaskConical className="w-5 h-5 text-gray-400 group-hover:text-purple-500 transition-colors" />
+            <div>
+              <div className="text-sm font-medium">SDK Compatibility Testing</div>
+              <div className="text-xs text-gray-400 dark:text-gray-500">Test across SDK & runtime versions</div>
+            </div>
+          </Link>
+
           {/* Formal Verification Panel */}
           <FormalVerificationPanel contractId={contract.id} />
+
+          {/* Release Notes Panel */}
+          <ReleaseNotesPanel contractId={contract.id} />
         </div>
       </div>
     </div>

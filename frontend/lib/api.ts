@@ -232,6 +232,58 @@ export interface MetricSeriesResponse {
 
 export type DeprecationStatus = 'active' | 'deprecated' | 'retired';
 
+export type ReleaseNotesStatus = 'draft' | 'published';
+
+export interface FunctionChange {
+  name: string;
+  change_type: 'added' | 'removed' | 'modified';
+  old_signature?: string;
+  new_signature?: string;
+  is_breaking: boolean;
+}
+
+export interface DiffSummary {
+  files_changed: number;
+  lines_added: number;
+  lines_removed: number;
+  function_changes: FunctionChange[];
+  has_breaking_changes: boolean;
+  features_count: number;
+  fixes_count: number;
+  breaking_count: number;
+}
+
+export interface ReleaseNotesResponse {
+  id: string;
+  contract_id: string;
+  version: string;
+  previous_version?: string;
+  diff_summary: DiffSummary;
+  changelog_entry?: string;
+  notes_text: string;
+  status: ReleaseNotesStatus;
+  generated_by: string;
+  created_at: string;
+  updated_at: string;
+  published_at?: string;
+}
+
+export interface GenerateReleaseNotesRequest {
+  version: string;
+  previous_version?: string;
+  source_url?: string;
+  changelog_content?: string;
+  contract_address?: string;
+}
+
+export interface UpdateReleaseNotesRequest {
+  notes_text: string;
+}
+
+export interface PublishReleaseNotesRequest {
+  update_version_record?: boolean;
+}
+
 export interface DeprecationInfo {
   contract_id: string;
   status: DeprecationStatus;
@@ -847,6 +899,168 @@ export const api = {
       '/api/templates'
     );
   },
+
+  // SDK / Wasm / Network Compatibility Testing (Issue #261)
+  async getCompatibilityMatrix(id: string): Promise<CompatibilityTestMatrixResponse> {
+    return handleApiCall<CompatibilityTestMatrixResponse>(
+      () => fetch(`${API_URL}/api/contracts/${id}/compatibility-matrix`),
+      `/api/contracts/${id}/compatibility-matrix`
+    );
+  },
+
+  async runCompatibilityTest(id: string, data: RunCompatibilityTestRequest): Promise<CompatibilityTestEntry> {
+    return handleApiCall<CompatibilityTestEntry>(
+      () => fetch(`${API_URL}/api/contracts/${id}/compatibility-matrix/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+      `/api/contracts/${id}/compatibility-matrix/test`
+    );
+  },
+
+  async getCompatibilityHistory(id: string, limit?: number, offset?: number): Promise<CompatibilityHistoryResponse> {
+    const params = new URLSearchParams();
+    if (limit != null) params.set('limit', String(limit));
+    if (offset != null) params.set('offset', String(offset));
+    const qs = params.toString();
+    return handleApiCall<CompatibilityHistoryResponse>(
+      () => fetch(`${API_URL}/api/contracts/${id}/compatibility-matrix/history${qs ? `?${qs}` : ''}`),
+      `/api/contracts/${id}/compatibility-matrix/history`
+    );
+  },
+
+  async getCompatibilityNotifications(id: string): Promise<CompatibilityNotification[]> {
+    return handleApiCall<CompatibilityNotification[]>(
+      () => fetch(`${API_URL}/api/contracts/${id}/compatibility-matrix/notifications`),
+      `/api/contracts/${id}/compatibility-matrix/notifications`
+    );
+  },
+
+  async markCompatibilityNotificationsRead(id: string): Promise<unknown> {
+    return handleApiCall<unknown>(
+      () => fetch(`${API_URL}/api/contracts/${id}/compatibility-matrix/notifications/read`, {
+        method: 'POST',
+      }),
+      `/api/contracts/${id}/compatibility-matrix/notifications/read`
+    );
+  },
+
+  async getCompatibilityDashboard(): Promise<CompatibilityDashboardResponse> {
+    return handleApiCall<CompatibilityDashboardResponse>(
+      () => fetch(`${API_URL}/api/compatibility-dashboard`),
+      '/api/compatibility-dashboard'
+    );
+  },
+
+  // ── Release Notes Generation ────────────────────────────────────────────
+
+  async listReleaseNotes(id: string): Promise<ReleaseNotesResponse[]> {
+    return handleApiCall<ReleaseNotesResponse[]>(
+      () => fetch(`${API_URL}/api/contracts/${id}/release-notes`),
+      `/api/contracts/${id}/release-notes`
+    );
+  },
+
+  async getReleaseNotes(id: string, version: string): Promise<ReleaseNotesResponse> {
+    return handleApiCall<ReleaseNotesResponse>(
+      () => fetch(`${API_URL}/api/contracts/${id}/release-notes/${version}`),
+      `/api/contracts/${id}/release-notes/${version}`
+    );
+  },
+
+  async generateReleaseNotes(
+    id: string,
+    req: GenerateReleaseNotesRequest
+  ): Promise<ReleaseNotesResponse> {
+    return handleApiCall<ReleaseNotesResponse>(
+      () =>
+        fetch(`${API_URL}/api/contracts/${id}/release-notes/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        }),
+      `/api/contracts/${id}/release-notes/generate`
+    );
+  },
+
+  async updateReleaseNotes(
+    id: string,
+    version: string,
+    req: UpdateReleaseNotesRequest
+  ): Promise<ReleaseNotesResponse> {
+    return handleApiCall<ReleaseNotesResponse>(
+      () =>
+        fetch(`${API_URL}/api/contracts/${id}/release-notes/${version}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        }),
+      `/api/contracts/${id}/release-notes/${version}`
+    );
+  },
+
+  async publishReleaseNotes(
+    id: string,
+    version: string,
+    req?: PublishReleaseNotesRequest
+  ): Promise<ReleaseNotesResponse> {
+    return handleApiCall<ReleaseNotesResponse>(
+      () =>
+        fetch(`${API_URL}/api/contracts/${id}/release-notes/${version}/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req ?? { update_version_record: true }),
+        }),
+      `/api/contracts/${id}/release-notes/${version}/publish`
+  // Database Migration Versioning (Issue #252)
+  async getMigrationStatus(): Promise<MigrationStatusResponse> {
+    return handleApiCall<MigrationStatusResponse>(
+      () => fetch(`${API_URL}/api/admin/migrations/status`),
+      '/api/admin/migrations/status'
+    );
+  },
+
+  async registerMigration(data: RegisterMigrationRequest): Promise<RegisterMigrationResponse> {
+    return handleApiCall<RegisterMigrationResponse>(
+      () => fetch(`${API_URL}/api/admin/migrations/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+      '/api/admin/migrations/register'
+    );
+  },
+
+  async validateMigrations(): Promise<MigrationValidationResponse> {
+    return handleApiCall<MigrationValidationResponse>(
+      () => fetch(`${API_URL}/api/admin/migrations/validate`),
+      '/api/admin/migrations/validate'
+    );
+  },
+
+  async getMigrationLockStatus(): Promise<LockStatusResponse> {
+    return handleApiCall<LockStatusResponse>(
+      () => fetch(`${API_URL}/api/admin/migrations/lock`),
+      '/api/admin/migrations/lock'
+    );
+  },
+
+  async getMigrationVersion(version: number): Promise<SchemaVersion> {
+    return handleApiCall<SchemaVersion>(
+      () => fetch(`${API_URL}/api/admin/migrations/${version}`),
+      `/api/admin/migrations/${version}`
+    );
+  },
+
+  async rollbackMigration(version: number): Promise<RollbackResponse> {
+    return handleApiCall<RollbackResponse>(
+      () => fetch(`${API_URL}/api/admin/migrations/${version}/rollback`, {
+        method: 'POST',
+      }),
+      `/api/admin/migrations/${version}/rollback`
+    );
+  },
 };
 
 export interface Template {
@@ -938,6 +1152,144 @@ export interface AddCompatibilityRequest {
   target_version: string;
   stellar_version?: string;
   is_compatible: boolean;
+}
+
+// ─── SDK / Wasm / Network Compatibility Testing (Issue #261) ─────────────────
+
+export type CompatibilityTestStatus = 'compatible' | 'warning' | 'incompatible';
+
+export interface CompatibilityTestEntry {
+  sdk_version: string;
+  wasm_runtime: string;
+  network: string;
+  status: CompatibilityTestStatus;
+  tested_at: string;
+  test_duration_ms?: number;
+  error_message?: string;
+}
+
+export interface CompatibilityTestSummary {
+  total_tests: number;
+  compatible_count: number;
+  warning_count: number;
+  incompatible_count: number;
+}
+
+export interface CompatibilityTestMatrixResponse {
+  contract_id: string;
+  sdk_versions: string[];
+  wasm_runtimes: string[];
+  networks: string[];
+  entries: CompatibilityTestEntry[];
+  summary: CompatibilityTestSummary;
+  last_tested?: string;
+}
+
+export interface RunCompatibilityTestRequest {
+  sdk_version: string;
+  wasm_runtime: string;
+  network: string;
+}
+
+export interface CompatibilityHistoryEntry {
+  id: string;
+  contract_id: string;
+  sdk_version: string;
+  wasm_runtime: string;
+  network: string;
+  previous_status?: CompatibilityTestStatus;
+  new_status: CompatibilityTestStatus;
+  changed_at: string;
+  change_reason?: string;
+}
+
+export interface CompatibilityHistoryResponse {
+  contract_id: string;
+  changes: CompatibilityHistoryEntry[];
+  total: number;
+}
+
+export interface CompatibilityNotification {
+  id: string;
+  contract_id: string;
+  sdk_version: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface CompatibilityDashboardResponse {
+  total_contracts_tested: number;
+  overall_compatible: number;
+  overall_warning: number;
+  overall_incompatible: number;
+  sdk_versions: string[];
+  recent_changes: CompatibilityHistoryEntry[];
+}
+
+// ─── Database Migration Versioning (Issue #252) ──────────────────────────────
+
+export interface SchemaVersion {
+  id: number;
+  version: number;
+  description: string;
+  filename: string;
+  checksum: string;
+  applied_at: string;
+  applied_by: string;
+  execution_time_ms?: number;
+  rolled_back_at?: string;
+  rollback_by?: string;
+}
+
+export interface MigrationStatusResponse {
+  current_version?: number;
+  total_applied: number;
+  total_rolled_back: number;
+  pending_count: number;
+  versions: SchemaVersion[];
+  has_lock: boolean;
+  healthy: boolean;
+  warnings: string[];
+}
+
+export interface ChecksumMismatch {
+  version: number;
+  filename: string;
+  expected_checksum: string;
+  actual_checksum: string;
+}
+
+export interface MigrationValidationResponse {
+  valid: boolean;
+  mismatches: ChecksumMismatch[];
+  missing: number[];
+}
+
+export interface RegisterMigrationRequest {
+  version: number;
+  description: string;
+  filename: string;
+  sql_content: string;
+  down_sql?: string;
+}
+
+export interface RegisterMigrationResponse {
+  version: number;
+  checksum: string;
+  message: string;
+}
+
+export interface RollbackResponse {
+  version: number;
+  rolled_back_at: string;
+  message: string;
+}
+
+export interface LockStatusResponse {
+  locked: boolean;
+  locked_by?: string;
+  locked_at?: string;
 }
 
 // ─── Formal Verification ─────────────────────────────────────────────────────

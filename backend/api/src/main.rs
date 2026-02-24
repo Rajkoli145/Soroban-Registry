@@ -1,12 +1,30 @@
 #![allow(dead_code, unused)]
 
-mod routes;
-mod handlers;
-mod batch_verify_handlers;
 mod aggregation;
+mod analytics;
+mod breaking_changes;
+mod cache;
+mod compatibility_testing_handlers;
+mod custom_metrics_handlers;
+mod migration_handlers;
+mod dependency;
+mod deprecation_handlers;
 mod error;
+mod handlers;
+mod health;
+pub mod health_monitor;
+#[cfg(test)]
+mod health_tests;
+mod metrics;
+mod metrics_handler;
 mod rate_limit;
+pub mod request_tracing;
+mod routes;
+mod release_notes_handlers;
+mod release_notes_routes;
+pub mod signing_handlers;
 mod state;
+mod type_safety;
 mod validation;
 mod cache;
 mod metrics;
@@ -21,6 +39,10 @@ pub mod request_tracing;
 pub mod signing_handlers;
 mod type_safety;
 mod openapi;
+// mod auth;
+// mod auth_handlers;
+// mod resource_handlers;
+// mod resource_tracking;
 
 use anyhow::Result;
 use axum::http::{header, HeaderValue, Method};
@@ -60,6 +82,9 @@ async fn main() -> Result<()> {
 
     tracing::info!("Database connected and migrations applied");
 
+    // Check migration versioning state on startup (Issue #252)
+    migration_handlers::check_migrations_on_startup(&pool).await;
+
     // Spawn the hourly analytics aggregation background task
     aggregation::spawn_aggregation_task(pool.clone());
 
@@ -81,7 +106,12 @@ async fn main() -> Result<()> {
 
     // Create app state
     let is_shutting_down = Arc::new(AtomicBool::new(false));
+ openapi-doc
     let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone());
+    
+    // Warm up the cache
+    state.cache.clone().warm_up(pool.clone());
+
     let rate_limit_state = RateLimitState::from_env();
 
     let cors = CorsLayer::new()
@@ -99,6 +129,8 @@ async fn main() -> Result<()> {
         .merge(routes::health_routes())
         .merge(routes::migration_routes())
         .merge(routes::openapi_routes())
+        .merge(routes::compatibility_dashboard_routes())
+        .merge(release_notes_routes::release_notes_routes())
         .fallback(handlers::route_not_found)
         .layer(middleware::from_fn(request_tracing::tracing_middleware))
         .layer(middleware::from_fn_with_state(
