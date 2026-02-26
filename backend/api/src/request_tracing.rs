@@ -81,9 +81,7 @@ pub struct RequestId(pub String);
 impl RequestId {
     /// Retrieve the request ID from Axum request extensions, if present.
     pub fn from_request(req: &Request<Body>) -> Option<&str> {
-        req.extensions()
-            .get::<RequestId>()
-            .map(|r| r.0.as_str())
+        req.extensions().get::<RequestId>().map(|r| r.0.as_str())
     }
 }
 

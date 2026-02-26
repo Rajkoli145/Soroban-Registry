@@ -80,8 +80,7 @@ pub async fn compile_contract(
         });
     }
 
-    let temp_dir = TempDir::new()
-        .map_err(|e| RegistryError::Internal(format!("Failed to create temp dir: {}", e)))?;
+    let temp_dir = TempDir::new()?;
     bootstrap_project(temp_dir.path(), source_code, compiler_version)?;
 
     let mut command = Command::new("cargo");
@@ -100,8 +99,7 @@ pub async fn compile_contract(
 
     let output = timeout(BUILD_TIMEOUT, command.output())
         .await
-        .map_err(|_| RegistryError::VerificationFailed("Compilation timed out".to_string()))?
-        .map_err(|e| RegistryError::Internal(format!("Failed to execute cargo build: {}", e)))?;
+        .map_err(|_| RegistryError::VerificationFailed("Compilation timed out".to_string()))??;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -121,13 +119,8 @@ pub async fn compile_contract(
         .join("release")
         .join("verify_contract.wasm");
 
-    fs::read(&wasm_path).map_err(|e| {
-        RegistryError::Internal(format!(
-            "Compilation succeeded but wasm artifact not found at {}: {}",
-            wasm_path.display(),
-            e
-        ))
-    })
+    // Reading the compiled wasm artifact; io errors convert via `From` implementation
+    Ok(fs::read(&wasm_path)?)
 }
 
 fn bootstrap_project(
@@ -136,8 +129,7 @@ fn bootstrap_project(
     compiler_version: Option<&str>,
 ) -> Result<(), RegistryError> {
     let src_dir = root.join("src");
-    fs::create_dir_all(&src_dir)
-        .map_err(|e| RegistryError::Internal(format!("Failed to create src dir: {}", e)))?;
+    fs::create_dir_all(&src_dir)?;
 
     let sdk_version = compiler_version
         .filter(|v| !v.trim().is_empty())
@@ -148,12 +140,10 @@ fn bootstrap_project(
     );
 
     let cargo_path = root.join("Cargo.toml");
-    fs::write(&cargo_path, cargo_toml)
-        .map_err(|e| RegistryError::Internal(format!("Failed to write Cargo.toml: {}", e)))?;
+    fs::write(&cargo_path, cargo_toml)?;
 
     let lib_path = src_dir.join("lib.rs");
-    fs::write(&lib_path, source_code)
-        .map_err(|e| RegistryError::Internal(format!("Failed to write lib.rs: {}", e)))?;
+    fs::write(&lib_path, source_code)?;
 
     Ok(())
 }

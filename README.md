@@ -131,10 +131,10 @@ cargo run --bin api
 cd frontend
 
 # Install dependencies
-npm install
+pnpm install
 
 # Start development server
-npm run dev
+pnpm dev
 ```
 
 ## Usage
@@ -269,7 +269,7 @@ cargo test --all
 
 # Frontend tests
 cd frontend
-npm test
+pnpm test
 ```
 
 ### Code Quality
@@ -279,7 +279,7 @@ npm test
 cargo fmt --all
 
 # Lint TypeScript
-npm run lint
+pnpm lint
 ```
 
 ## Example: Publishing a Simple Contract

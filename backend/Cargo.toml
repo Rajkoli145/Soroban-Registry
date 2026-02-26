@@ -73,3 +73,6 @@ sha2 = "0.10"
 hex = "0.4"
 
 syn = { version = "2.0", features = ["full", "visit"] }
+
+# WASM validation
+wasmparser = "0.224"

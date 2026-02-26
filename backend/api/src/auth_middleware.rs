@@ -31,7 +31,13 @@ pub async fn auth_middleware(mut request: Request, next: Next) -> Response {
         return unauthorized("missing_bearer_token");
     };
 
-    let mgr = AuthManager::from_env();
+    let mgr = match AuthManager::from_env() {
+        Ok(mgr) => mgr,
+        Err(err) => {
+            tracing::error!(error = %err, "JWT authentication middleware is misconfigured");
+            return internal_error("auth_misconfigured");
+        }
+    };
     let claims = match mgr.validate_jwt(token) {
         Ok(c) => c,
         Err(_) => return unauthorized("invalid_token"),
@@ -49,6 +55,17 @@ fn unauthorized(reason: &'static str) -> Response {
         StatusCode::UNAUTHORIZED,
         Json(AuthErrorBody {
             error: "Unauthorized",
+            message: reason,
+        }),
+    )
+        .into_response()
+}
+
+fn internal_error(reason: &'static str) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(AuthErrorBody {
+            error: "InternalServerError",
             message: reason,
         }),
     )

@@ -1,9 +1,13 @@
 #![allow(dead_code, unused)]
 
+mod ab_test_handlers;
 mod aggregation;
 mod analytics;
+mod auth;
+mod batch_verify_handlers;
 mod breaking_changes;
 mod cache;
+mod canary_handlers;
 mod compatibility_testing_handlers;
 mod db_monitoring;
 
@@ -21,20 +25,19 @@ mod health_tests;
 mod metrics;
 mod metrics_handler;
 mod migration_handlers;
+mod performance_handlers;
 mod rate_limit;
 mod release_notes_handlers;
 mod release_notes_routes;
 pub mod request_tracing;
 mod routes;
+pub mod security_log;
 pub mod signing_handlers;
+mod simulation;
+mod simulation_handlers;
 mod state;
 mod type_safety;
 mod validation;
-// mod auth;
-// mod auth_handlers;
-// mod resource_handlers;
-// mod resource_tracking;
-
 
 use anyhow::Result;
 use axum::extract::{Request, State};
@@ -74,6 +77,19 @@ async fn main() -> Result<()> {
 
     // Initialize structured JSON tracing (ELK/Splunk compatible)
     request_tracing::init_json_tracing();
+
+    // Fail fast on startup when JWT configuration is invalid.
+    if let Err(err) = auth::AuthManager::from_env() {
+        tracing::error!(
+            error = %err,
+            "JWT authentication configuration is invalid. Set JWT_SECRET to a strong value with at least {} characters.",
+            auth::MIN_JWT_SECRET_LEN
+        );
+        return Err(anyhow::anyhow!(
+            "Invalid JWT authentication configuration: {}",
+            err
+        ));
+    }
 
     // Database connection with dynamic pool size
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -135,16 +151,28 @@ background-job-queue
   background-job-queue
     let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone());
     
+openapi-doc
+ openapi-doc
+    let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone());
+    
+
 
     // Spawn the background DB and cache monitoring task
     db_monitoring::spawn_db_monitoring_task(pool.clone(), state.cache.clone());
 
-main
+    // Spawn the health monitor background task (Issue #333)
+    let hm_state = state.clone();
+    let hm_status = state.health_monitor_status.clone();
+    tokio::spawn(async move {
+        health_monitor::run_health_monitor(hm_state, hm_status).await;
+    });
+
     // Warm up the cache
     state.cache.clone().warm_up(pool.clone());
 
 main
     let rate_limit_state = RateLimitState::from_env();
+    rate_limit_state.spawn_eviction_task();
 
     let allowed_origins = std::env::var("ALLOWED_ORIGINS").unwrap_or_else(|_| {
         "http://localhost:3000,https://soroban-registry.vercel.app".to_string()
@@ -164,7 +192,13 @@ main
 
     let cors = CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
     // Build router
@@ -173,11 +207,24 @@ main
         .merge(routes::publisher_routes())
         .merge(routes::health_routes())
         .merge(routes::migration_routes())
+        .merge(routes::openapi_routes())
+        .merge(routes::health_monitor_routes())
+        .merge(routes::admin_routes())
         .merge(routes::compatibility_dashboard_routes())
+        .merge(routes::canary_routes())
+        .merge(routes::ab_test_routes())
+        .merge(routes::performance_routes())
+        .merge(routes::observability_routes())
         .merge(release_notes_routes::release_notes_routes())
         .nest("/api", activity_feed_routes::routes())
         .fallback(handlers::route_not_found)
         .layer(middleware::from_fn(request_tracing::tracing_middleware))
+        .layer(middleware::from_fn(
+            validation::payload_size::payload_size_validation_middleware,
+        ))
+        .layer(middleware::from_fn(
+            validation::enhanced_extractors::validation_failure_tracking_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             track_in_flight_middleware,
@@ -189,8 +236,12 @@ main
         .layer(cors)
         .with_state(state.clone());
 
-    // Start server
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3001));
+    // Start server (port configurable via PORT env var, default 3001)
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3001);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("API server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -223,7 +274,9 @@ main
             _ = terminate => {},
         }
 
-        tracing::info!("SIGTERM/SIGINT received. Failing health checks and stopping new requests...");
+        tracing::info!(
+            "SIGTERM/SIGINT received. Failing health checks and stopping new requests..."
+        );
         let _ = tx.send(()).await;
     });
 
@@ -236,7 +289,10 @@ main
     if let Some(()) = rx.recv().await {
         is_shutting_down.store(true, Ordering::SeqCst);
         let initial_in_flight = crate::metrics::HTTP_IN_FLIGHT.get();
-        tracing::info!("Graceful shutdown initiated. In-flight requests: {}", initial_in_flight);
+        tracing::info!(
+            "Graceful shutdown initiated. In-flight requests: {}",
+            initial_in_flight
+        );
 
         let timeout_secs = std::env::var("SHUTDOWN_TIMEOUT")
             .unwrap_or_else(|_| "30".to_string())
@@ -245,7 +301,7 @@ main
 
         let start_time = std::time::Instant::now();
         let timeout_duration = std::time::Duration::from_secs(timeout_secs);
-        
+
         let mut success = false;
         loop {
             let in_flight = crate::metrics::HTTP_IN_FLIGHT.get();
@@ -270,7 +326,7 @@ main
 
         tracing::info!("Closing database connections cleanly...");
         pool.close().await;
-        
+
         let shutdown_duration = start_time.elapsed();
         tracing::info!(
             "Shutdown complete. Duration: {}ms",

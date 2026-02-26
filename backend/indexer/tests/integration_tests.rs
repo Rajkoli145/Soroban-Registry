@@ -1,11 +1,10 @@
 /// Integration tests for the indexer service
 /// These tests validate core functionality without requiring a real database
-
 #[cfg(test)]
 mod tests {
     use indexer::backoff::ExponentialBackoff;
     use indexer::detector::detect_contract_deployments;
-    use indexer::rpc::{ContractDeployment, Operation};
+    use indexer::rpc::Operation;
     use indexer::state::IndexerState;
     use serde_json::json;
     use shared::Network;
@@ -102,6 +101,7 @@ mod tests {
         let state = IndexerState {
             network: Network::Testnet,
             last_indexed_ledger_height: 100,
+            last_indexed_ledger_hash: Some("hash1".to_string()),
             last_checkpoint_ledger_height: 100,
             consecutive_failures: 0,
         };
@@ -114,6 +114,7 @@ mod tests {
         let mut state = IndexerState {
             network: Network::Testnet,
             last_indexed_ledger_height: 100,
+            last_indexed_ledger_hash: Some("hash1".to_string()),
             last_checkpoint_ledger_height: 100,
             consecutive_failures: 0,
         };
@@ -135,6 +136,7 @@ mod tests {
         let mut state = IndexerState {
             network: Network::Testnet,
             last_indexed_ledger_height: 100,
+            last_indexed_ledger_hash: Some("hash1".to_string()),
             last_checkpoint_ledger_height: 50,
             consecutive_failures: 0,
         };

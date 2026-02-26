@@ -1,15 +1,28 @@
+use axum::{
+    extract::Request,
+    http::{header, StatusCode},
+    middleware::Next,
+    response::Response,
+};
 use chrono::{Duration, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
+
+pub const MIN_JWT_SECRET_LEN: usize = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthClaims {
     pub sub: String,
     pub iat: i64,
     pub exp: i64,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub admin: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +37,30 @@ pub struct AuthManager {
     decoding_key: DecodingKey,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthConfigError {
+    MissingJwtSecret,
+    JwtSecretTooShort { min_len: usize, actual_len: usize },
+}
+
+impl fmt::Display for AuthConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AuthConfigError::MissingJwtSecret => write!(f, "JWT_SECRET must be set"),
+            AuthConfigError::JwtSecretTooShort {
+                min_len,
+                actual_len,
+            } => write!(
+                f,
+                "JWT_SECRET must be at least {} characters (got {})",
+                min_len, actual_len
+            ),
+        }
+    }
+}
+
+impl std::error::Error for AuthConfigError {}
+
 impl AuthManager {
     pub fn new(secret: String) -> Self {
         Self {
@@ -33,9 +70,21 @@ impl AuthManager {
         }
     }
 
-    pub fn from_env() -> Self {
-        let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-only-secret".to_string());
-        Self::new(secret)
+    pub fn from_env() -> Result<Self, AuthConfigError> {
+        let secret = std::env::var("JWT_SECRET").map_err(|_| AuthConfigError::MissingJwtSecret)?;
+        Self::validate_jwt_secret(&secret)?;
+        Ok(Self::new(secret))
+    }
+
+    fn validate_jwt_secret(secret: &str) -> Result<(), AuthConfigError> {
+        let actual_len = secret.len();
+        if actual_len < MIN_JWT_SECRET_LEN {
+            return Err(AuthConfigError::JwtSecretTooShort {
+                min_len: MIN_JWT_SECRET_LEN,
+                actual_len,
+            });
+        }
+        Ok(())
     }
 
     pub fn create_challenge(&mut self, address: &str) -> String {
@@ -83,6 +132,8 @@ impl AuthManager {
             sub: address.to_string(),
             iat,
             exp,
+            role: None,
+            admin: false,
         };
         encode(&Header::default(), &claims, &self.encoding_key).map_err(|_| "jwt_encode_failed")
     }
@@ -94,6 +145,36 @@ impl AuthManager {
             .map(|data| data.claims)
             .map_err(|_| "invalid_token")
     }
+}
+
+fn extract_bearer_token(req: &Request) -> Option<&str> {
+    req.headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+}
+
+fn is_admin(claims: &AuthClaims) -> bool {
+    claims.admin || matches!(claims.role.as_deref(), Some("admin" | "ADMIN" | "Admin"))
+}
+
+pub async fn require_admin(req: Request, next: Next) -> Result<Response, StatusCode> {
+    let Some(token) = extract_bearer_token(&req) else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let auth = AuthManager::from_env().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let claims = auth
+        .validate_jwt(token)
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    if !is_admin(&claims) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    Ok(next.run(req).await)
 }
 
 fn decode_hex_32(value: &str) -> Option<[u8; 32]> {
@@ -117,7 +198,7 @@ fn decode_hex_64(value: &str) -> Option<[u8; 64]> {
 }
 
 fn decode_hex(value: &str) -> Option<Vec<u8>> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return None;
     }
     (0..value.len())
@@ -165,5 +246,21 @@ mod tests {
         assert!(first.is_ok());
         let second = auth.verify_and_issue_jwt(&vk_hex, &vk_hex, &sig_hex);
         assert!(second.is_err());
+    }
+
+    #[test]
+    fn jwt_secret_length_is_enforced() {
+        let too_short = "a".repeat(MIN_JWT_SECRET_LEN - 1);
+        let result = AuthManager::validate_jwt_secret(&too_short);
+        assert!(matches!(
+            result,
+            Err(AuthConfigError::JwtSecretTooShort {
+                min_len: MIN_JWT_SECRET_LEN,
+                actual_len: _
+            })
+        ));
+
+        let valid = "a".repeat(MIN_JWT_SECRET_LEN);
+        assert!(AuthManager::validate_jwt_secret(&valid).is_ok());
     }
 }

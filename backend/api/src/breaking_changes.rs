@@ -13,14 +13,14 @@ use crate::type_safety::types::{
     ContractABI, ContractFunction, EnumVariant, SorobanType, StructField,
 };
 
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ChangeSeverity {
     Breaking,
     NonBreaking,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, utoipa::ToSchema)]
 pub struct BreakingChange {
     pub severity: ChangeSeverity,
     pub category: String,
@@ -31,7 +31,7 @@ pub struct BreakingChange {
     pub type_name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, utoipa::ToSchema)]
 pub struct BreakingChangeReport {
     pub old_id: String,
     pub new_id: String,
@@ -41,12 +41,25 @@ pub struct BreakingChangeReport {
     pub changes: Vec<BreakingChange>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct BreakingChangeQuery {
     pub old_id: String,
     pub new_id: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/breaking-changes",
+    params(
+        ("old_id" = String, Query, description = "Old contract@version selector"),
+        ("new_id" = String, Query, description = "New contract@version selector")
+    ),
+    responses(
+        (status = 200, description = "Breaking change report", body = BreakingChangeReport),
+        (status = 400, description = "Invalid ABI or selector")
+    ),
+    tag = "Analysis"
+)]
 pub async fn get_breaking_changes(
     Query(query): Query<BreakingChangeQuery>,
     State(state): State<AppState>,

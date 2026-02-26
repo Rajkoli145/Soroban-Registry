@@ -173,7 +173,7 @@ fn operation_from_function(
                 examples: None,
             },
         )]);
-        
+
         (
             Some(RequestBody {
                 required: true,

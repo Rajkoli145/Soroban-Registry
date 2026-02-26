@@ -12,5 +12,8 @@ sqlx = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 anyhow = { workspace = true }
+openapi-doc
+utoipa = { workspace = true }
 base64 = { workspace = true }
+main
 rust_decimal = "1.35"

@@ -1,6 +1,6 @@
+use chrono::Timelike;
 use sqlx::PgPool;
 use std::time::Duration;
-use chrono::Timelike;
 
 /// Spawn the background aggregation task.
 ///

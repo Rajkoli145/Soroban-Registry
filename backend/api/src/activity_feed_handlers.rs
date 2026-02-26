@@ -1,118 +1,121 @@
-use crate::{
-    error::{ApiError, ApiResult},
-    handlers::db_internal_error,
-    state::AppState,
-};
+//! Activity feed handler — GET /api/activity-feed
+//!
+//! Implements cursor-based pagination so clients can scroll through
+//! analytics events without the bugs described in issue #337:
+//!
+//!  • total      = real COUNT(*), not entries.len()
+//!  • page       = removed in favour of next_cursor
+//!  • next_cursor = created_at of the last returned entry
+
 use axum::{
     extract::{Query, State},
     Json,
 };
-use chrono::{DateTime, Utc};
-use serde::Deserialize;
-use shared::{ActivityFeedEntry, AnalyticsEventType, Network, PaginatedResponse};
-use uuid::Uuid;
+use chrono::{DateTime, Duration, Utc};
+use shared::{ActivityFeedParams, AnalyticsEvent, CursorPaginatedResponse};
 
-#[derive(Debug, Deserialize)]
-pub struct ActivityFeedQuery {
-    #[serde(default)]
-    pub event_types: Vec<AnalyticsEventType>,
-    pub network: Option<Network>,
-    pub publisher_id: Option<Uuid>,
-    pub days: Option<i64>,
-    pub cursor: Option<DateTime<Utc>>,
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-}
+use crate::{error::AppError, state::AppState};
 
-fn default_limit() -> i64 {
-    20
-}
-
+/// GET /api/activity-feed
+///
+/// Query params (all optional):
+///   cursor     – ISO-8601 timestamp (from previous response's next_cursor)
+///   limit      – page size, default 20, capped at 100
+///   event_type – filter to a single event type
 pub async fn get_activity_feed(
     State(state): State<AppState>,
-    Query(query): Query<ActivityFeedQuery>,
-) -> ApiResult<Json<PaginatedResponse<ActivityFeedEntry>>> {
-    let limit = query.limit.clamp(1, 100);
-    let days = query.days.unwrap_or(7).clamp(1, 365);
-    let start_time = Utc::now() - chrono::Duration::days(days);
-
-    let mut sql = String::from(
-        r#"
-        SELECT 
-            ae.id,
-            ae.event_type as "event_type: AnalyticsEventType",
-            ae.contract_id,
-            c.name as contract_name,
-            c.contract_id as contract_stellar_id,
-            ae.publisher_id,
-            p.username as publisher_name,
-            ae.network as "network: Network",
-            ae.metadata,
-            ae.created_at
-        FROM analytics_events ae
-        LEFT JOIN contracts c ON ae.contract_id = c.id
-        LEFT JOIN publishers p ON ae.publisher_id = p.id
-        WHERE ae.created_at >= $1
-        "#,
-    );
-
-    let mut bind_index = 2; // $1 is start_time
-
-    if !query.event_types.is_empty() {
-        sql.push_str(&format!(" AND ae.event_type = ANY(${})", bind_index));
-        bind_index += 1;
+    Query(mut params): Query<ActivityFeedParams>,
+) -> Result<Json<CursorPaginatedResponse<AnalyticsEvent>>, AppError> {
+    // ── Clamp inputs to safe ranges ───────────────────────────────────────
+    if params.limit > 100 {
+        params.limit = 100;
     }
+    let start_time: DateTime<Utc> = Utc::now() - Duration::days(7);
 
-    if let Some(ref net) = query.network {
-        sql.push_str(&format!(" AND ae.network = ${}", bind_index));
-        bind_index += 1;
-    }
+    // ── 1. Real COUNT(*) with identical filters ───────────────────────────
+    //    WHERE clause must mirror the SELECT below exactly.
+    let total: i64 = match &params.event_type {
+        Some(et) => {
+            sqlx::query_scalar(
+                r#"
+                SELECT COUNT(*)
+                FROM   analytics_events
+                WHERE  created_at >= $1
+                AND    ($2::timestamptz IS NULL OR created_at < $2)
+                AND    event_type = $3
+                "#,
+            )
+            .bind(start_time)
+            .bind(params.cursor)
+            .bind(et)
+            .fetch_one(&state.db)
+            .await?
+        }
+        None => {
+            sqlx::query_scalar(
+                r#"
+                SELECT COUNT(*)
+                FROM   analytics_events
+                WHERE  created_at >= $1
+                AND    ($2::timestamptz IS NULL OR created_at < $2)
+                "#,
+            )
+            .bind(start_time)
+            .bind(params.cursor)
+            .fetch_one(&state.db)
+            .await?
+        }
+    };
 
-    if let Some(pub_id) = query.publisher_id {
-        sql.push_str(&format!(" AND ae.publisher_id = ${}", bind_index));
-        bind_index += 1;
-    }
+    // ── 2. Fetch the page ─────────────────────────────────────────────────
+    let entries: Vec<AnalyticsEvent> = match &params.event_type {
+        Some(et) => {
+            sqlx::query_as(
+                r#"
+                SELECT id, event_type, contract_id, user_address,
+                       network, metadata, created_at
+                FROM   analytics_events
+                WHERE  created_at >= $1
+                AND    ($2::timestamptz IS NULL OR created_at < $2)
+                AND    event_type = $3
+                ORDER  BY created_at DESC
+                LIMIT  $4
+                "#,
+            )
+            .bind(start_time)
+            .bind(params.cursor)
+            .bind(et)
+            .bind(params.limit)
+            .fetch_all(&state.db)
+            .await?
+        }
+        None => {
+            sqlx::query_as(
+                r#"
+                SELECT id, event_type, contract_id, user_address,
+                       network, metadata, created_at
+                FROM   analytics_events
+                WHERE  created_at >= $1
+                AND    ($2::timestamptz IS NULL OR created_at < $2)
+                ORDER  BY created_at DESC
+                LIMIT  $3
+                "#,
+            )
+            .bind(start_time)
+            .bind(params.cursor)
+            .bind(params.limit)
+            .fetch_all(&state.db)
+            .await?
+        }
+    };
 
-    if let Some(cursor) = query.cursor {
-        sql.push_str(&format!(" AND ae.created_at < ${}", bind_index));
-        bind_index += 1;
-    }
+    // ── 3. Compute next_cursor from the oldest entry on this page ─────────
+    let next_cursor = entries.last().map(|e| e.created_at);
 
-    sql.push_str(&format!(
-        " ORDER BY ae.created_at DESC LIMIT ${}",
-        bind_index
-    ));
-
-    let mut db_query = sqlx::query_as::<_, ActivityFeedEntry>(&sql).bind(start_time);
-
-    if !query.event_types.is_empty() {
-        // sqlx doesn't handle Vec<Enum> directly well for ANY, might need string conversion
-        let types: Vec<String> = query.event_types.iter().map(|t| t.to_string()).collect();
-        db_query = db_query.bind(types);
-    }
-
-    if let Some(ref net) = query.network {
-        db_query = db_query.bind(net);
-    }
-
-    if let Some(pub_id) = query.publisher_id {
-        db_query = db_query.bind(pub_id);
-    }
-
-    if let Some(cursor) = query.cursor {
-        db_query = db_query.bind(cursor);
-    }
-
-    db_query = db_query.bind(limit);
-
-    let entries = db_query
-        .fetch_all(&state.db)
-        .await
-        .map_err(|err| db_internal_error("fetch activity feed", err))?;
-
-    // For simplicity in this demo, we return a fixed total of 0 or entries.len()
-    // Real cursor-based pagination usually doesn't return total count unless requested separately
-    let total = entries.len() as i64;
-
-    Ok(Json(PaginatedResponse::new(entries, total, 1, limit)))
+    Ok(Json(CursorPaginatedResponse::new(
+        entries,
+        total,
+        params.limit,
+        next_cursor,
+    )))
 }

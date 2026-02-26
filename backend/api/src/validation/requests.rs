@@ -513,10 +513,11 @@ mod tests {
     fn test_publish_request_valid() {
         let req = PublishRequest {
             contract_id: valid_contract_id(),
+            wasm_hash: "a".repeat(64),
             name: "My Contract".to_string(),
             description: Some("A test contract".to_string()),
             network: Network::Testnet,
-            category: Some("DeFi".to_string()),
+            category: Some("Token".to_string()),
             tags: vec!["token".to_string(), "defi".to_string()],
             source_url: Some("https://github.com/user/repo".to_string()),
             publisher_address: valid_stellar_address(),
@@ -530,6 +531,7 @@ mod tests {
     fn test_publish_request_invalid_contract_id() {
         let req = PublishRequest {
             contract_id: "invalid".to_string(),
+            wasm_hash: "a".repeat(64),
             name: "My Contract".to_string(),
             description: None,
             network: Network::Testnet,
@@ -550,6 +552,7 @@ mod tests {
     fn test_publish_request_sanitization() {
         let mut req = PublishRequest {
             contract_id: "  cdlzfc3syjydzt7k67vz75hpjvieuvnixf47zg2fb2rmqqvu2hhgcysc  ".to_string(),
+            wasm_hash: format!("  {}  ", "a".repeat(64)),
             name: "  <b>My Contract</b>  ".to_string(),
             description: Some("  <script>alert('xss')</script>Description  ".to_string()),
             network: Network::Testnet,
@@ -564,6 +567,7 @@ mod tests {
         req.sanitize();
 
         assert_eq!(req.contract_id, valid_contract_id());
+        assert_eq!(req.wasm_hash.trim(), "a".repeat(64));
         assert_eq!(req.name, "My Contract");
         assert_eq!(req.description, Some("alert('xss')Description".to_string()));
         assert_eq!(req.publisher_address, valid_stellar_address());

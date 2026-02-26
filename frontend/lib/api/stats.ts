@@ -33,7 +33,7 @@ function getRandomInt(min: number, max: number): number {
 function generateTrendData(days: number): { date: string; count: number }[] {
   const data = [];
   const today = new Date();
-  
+
   for (let i = days - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
@@ -42,7 +42,7 @@ function generateTrendData(days: number): { date: string; count: number }[] {
       count: getRandomInt(5, 50),
     });
   }
-  
+
   return data;
 }
 
@@ -73,8 +73,9 @@ export async function fetchStats(period: TimePeriod): Promise<StatsResponse> {
 
   const deploymentsTrend = generateTrendData(trendDays);
 
-  const topPublishers = PUBLISHER_NAMES.map((name) => ({
+  const topPublishers = PUBLISHER_NAMES.map((name, index) => ({
     name,
+    address: `G${name.toUpperCase().substring(0, 5)}...MOCK${index}`,
     contractsDeployed: getRandomInt(10, 200),
   }))
     .sort((a, b) => b.contractsDeployed - a.contractsDeployed)

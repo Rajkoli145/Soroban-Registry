@@ -1,4 +1,5 @@
 use crate::cache::{CacheConfig, CacheLayer};
+use crate::health_monitor::HealthMonitorStatus;
 use prometheus::Registry;
 use sqlx::PgPool;
 use std::sync::atomic::AtomicBool;
@@ -14,6 +15,7 @@ pub struct AppState {
     pub registry: Registry,
     pub job_engine: Arc<soroban_batch::engine::JobEngine>,
     pub is_shutting_down: Arc<AtomicBool>,
+    pub health_monitor_status: HealthMonitorStatus,
 }
 
 impl AppState {
@@ -31,6 +33,7 @@ impl AppState {
             registry,
             job_engine,
             is_shutting_down,
+            health_monitor_status: HealthMonitorStatus::default(),
         }
     }
 }

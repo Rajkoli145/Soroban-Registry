@@ -1,6 +1,6 @@
 # Soroban Registry — Deployment Guide
 
-> **Audience:** DevOps engineers, platform teams, and developers running the system locally or in production.  
+> **Audience:** DevOps engineers, platform teams, and developers running the system locally or in production.
 > **Goal:** Provide clear, reproducible steps for every deployment scenario.
 
 ---
@@ -48,11 +48,12 @@ cargo install sqlx-cli --no-default-features --features postgres
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `DATABASE_URL` | — | **Yes** | PostgreSQL connection string |
+| `JWT_SECRET` | — | **Yes** | JWT signing secret (must be at least 32 characters) |
 | `RUST_LOG` | `info` | No | Tracing log level (`debug`, `info`, `warn`, `error`) |
 | `OTLP_ENDPOINT` | — | No | OpenTelemetry collector endpoint (e.g. `http://jaeger:4317`) |
 | `CACHE_ENABLED` | `true` | No | Enable in-process Moka cache |
 | `CACHE_MAX_CAPACITY` | `10000` | No | Max weighted entries per cache |
-| `PORT` | `3001` | No | HTTP listen port |
+| `PORT` | `3001` | No | HTTP listen port (server reads PORT env var, falls back to 3001) |
 
 ### 2.2 Blockchain Indexer (`backend/indexer`)
 
@@ -97,6 +98,7 @@ Minimum `.env` for local development:
 
 ```dotenv
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/soroban_registry
+JWT_SECRET=replace-with-a-random-32-plus-character-secret
 NEXT_PUBLIC_API_URL=http://localhost:3001
 STELLAR_NETWORK=testnet
 RUST_LOG=debug
@@ -265,7 +267,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3
 
 - [ ] All environment variables set and validated in the target environment.
 - [ ] `DATABASE_URL` points to a managed PostgreSQL instance (not the dev container).
-- [ ] `SECRET_KEY` / JWT signing key rotated from default values.
+- [ ] `JWT_SECRET` is set from a secret manager and is at least 32 characters (no defaults).
 - [ ] `SLACK_WEBHOOK_URL` and/or `PAGERDUTY_SERVICE_KEY` configured for alerts.
 - [ ] TLS termination configured upstream (load balancer or ingress controller).
 - [ ] `NEXT_PUBLIC_API_URL` set to the **public** API URL (not `localhost`).
@@ -327,6 +329,11 @@ spec:
                 secretKeyRef:
                   name: soroban-secrets
                   key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: soroban-secrets
+                  key: jwt-secret
             - name: RUST_LOG
               value: info
             - name: OTLP_ENDPOINT
@@ -471,10 +478,10 @@ The API is **stateless** — the only shared state is `AppState` which holds:
 - A `PgPool` (connection pooled, safe for multiple replicas)
 - A `CacheLayer` (per-process, in-memory — not shared across replicas)
 
-**Horizontal scaling:**  
+**Horizontal scaling:**
 Multiple API replicas can be placed behind a load balancer. The in-process cache is local to each replica; cache warm-up happens organically through TTL-based population. This is acceptable for the current workload. If cache consistency across replicas becomes critical, migrate to a shared Redis cache.
 
-**Connection pool sizing:**  
+**Connection pool sizing:**
 PostgreSQL max connections = `replica_count × PgPool.max_connections`. Size `max_connections` accordingly:
 
 ```
@@ -528,5 +535,5 @@ Quick reference:
 ./scripts/disaster_recovery.sh
 ```
 
-**Recovery Time Objective (RTO):** target < 1 hour for full-service restoration.  
+**Recovery Time Objective (RTO):** target < 1 hour for full-service restoration.
 **Recovery Point Objective (RPO):** target < 24 hours data loss (daily backup cadence).

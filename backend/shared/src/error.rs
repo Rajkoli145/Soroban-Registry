@@ -32,4 +32,22 @@ impl From<sqlx::Error> for RegistryError {
     }
 }
 
+impl From<serde_json::Error> for RegistryError {
+    fn from(err: serde_json::Error) -> Self {
+        RegistryError::Internal(format!("JSON error: {}", err))
+    }
+}
+
+impl From<std::io::Error> for RegistryError {
+    fn from(err: std::io::Error) -> Self {
+        RegistryError::Internal(format!("IO error: {}", err))
+    }
+}
+
+impl From<anyhow::Error> for RegistryError {
+    fn from(err: anyhow::Error) -> Self {
+        RegistryError::Internal(format!("{}", err))
+    }
+}
+
 pub type Result<T> = std::result::Result<T, RegistryError>;

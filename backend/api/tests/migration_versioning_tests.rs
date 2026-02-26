@@ -85,7 +85,10 @@ fn test_checksum_deterministic() {
 fn test_checksum_different_content() {
     let c1 = compute_checksum("CREATE TABLE foo (id INT);");
     let c2 = compute_checksum("CREATE TABLE bar (id INT);");
-    assert_ne!(c1, c2, "Different content should produce different checksums");
+    assert_ne!(
+        c1, c2,
+        "Different content should produce different checksums"
+    );
 }
 
 #[test]
@@ -112,7 +115,10 @@ fn test_checksum_empty_string() {
 fn test_checksum_whitespace_sensitive() {
     let c1 = compute_checksum("SELECT 1;");
     let c2 = compute_checksum("SELECT  1;");
-    assert_ne!(c1, c2, "Whitespace differences should produce different checksums");
+    assert_ne!(
+        c1, c2,
+        "Whitespace differences should produce different checksums"
+    );
 }
 
 // ─── Version Gap Detection ───────────────────────────────────────────────────
@@ -224,7 +230,10 @@ fn test_rollback_checksum_matches() {
     let down_sql = "DROP TABLE foo;";
     let stored_checksum = compute_checksum(down_sql);
     let actual_checksum = compute_checksum(down_sql);
-    assert_eq!(stored_checksum, actual_checksum, "Rollback checksum should match");
+    assert_eq!(
+        stored_checksum, actual_checksum,
+        "Rollback checksum should match"
+    );
 }
 
 #[test]
@@ -243,6 +252,8 @@ fn test_rollback_checksum_tampered() {
 fn test_migration_filename_format() {
     let m = make_migration(1, "sql", false);
     assert_eq!(m.filename, "001_migration.sql");
+    assert_eq!(m.description, "Migration v1");
+    assert_eq!(m.checksum.len(), 64);
 
     let m = make_migration(42, "sql", false);
     assert_eq!(m.filename, "042_migration.sql");
@@ -252,7 +263,7 @@ fn test_migration_filename_format() {
 
 #[test]
 fn test_duplicate_version_detection() {
-    let migrations = vec![
+    let migrations = [
         make_migration(1, "a", false),
         make_migration(2, "b", false),
         make_migration(2, "c", false), // duplicate

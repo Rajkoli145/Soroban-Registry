@@ -213,6 +213,7 @@ impl StateManager {
             SELECT 
                 network::text as network,
                 last_indexed_ledger_height,
+                last_indexed_ledger_hash,
                 last_checkpoint_ledger_height,
                 consecutive_failures
             FROM indexer_state
@@ -240,6 +241,9 @@ impl StateManager {
                     last_indexed_ledger_height: row
                         .try_get::<i64, _>("last_indexed_ledger_height")
                         .ok()? as u64,
+                    last_indexed_ledger_hash: row
+                        .try_get::<Option<String>, _>("last_indexed_ledger_hash")
+                        .ok()?,
                     last_checkpoint_ledger_height: row
                         .try_get::<i64, _>("last_checkpoint_ledger_height")
                         .ok()? as u64,
@@ -263,11 +267,22 @@ fn network_to_str(network: &Network) -> &str {
 mod tests {
     use super::*;
 
+    fn make_state(last_indexed: u64, failures: i32) -> IndexerState {
+        IndexerState {
+            network: Network::Testnet,
+            last_indexed_ledger_height: last_indexed,
+            last_indexed_ledger_hash: None,
+            last_checkpoint_ledger_height: last_indexed,
+            consecutive_failures: failures,
+        }
+    }
+
     #[test]
     fn test_state_next_ledger() {
         let state = IndexerState {
             network: Network::Testnet,
             last_indexed_ledger_height: 100,
+            last_indexed_ledger_hash: None,
             last_checkpoint_ledger_height: 100,
             consecutive_failures: 0,
         };
@@ -275,10 +290,17 @@ mod tests {
     }
 
     #[test]
+    fn test_state_next_ledger_from_zero() {
+        let state = make_state(0, 0);
+        assert_eq!(state.next_ledger_to_process(), 1);
+    }
+
+    #[test]
     fn test_state_record_failure() {
         let mut state = IndexerState {
             network: Network::Testnet,
             last_indexed_ledger_height: 100,
+            last_indexed_ledger_hash: None,
             last_checkpoint_ledger_height: 100,
             consecutive_failures: 0,
         };
@@ -295,6 +317,7 @@ mod tests {
         let mut state = IndexerState {
             network: Network::Testnet,
             last_indexed_ledger_height: 100,
+            last_indexed_ledger_hash: None,
             last_checkpoint_ledger_height: 100,
             consecutive_failures: 5,
         };
@@ -308,5 +331,58 @@ mod tests {
         assert_eq!(network_to_str(&Network::Mainnet), "mainnet");
         assert_eq!(network_to_str(&Network::Testnet), "testnet");
         assert_eq!(network_to_str(&Network::Futurenet), "futurenet");
+    }
+
+    // ─── Off-by-one / caught-up boundary tests ─────────────────────────
+
+    #[test]
+    fn test_caught_up_next_ledger_exceeds_latest() {
+        // When last_indexed == latest_ledger, next_ledger = latest + 1
+        // The indexer is caught up and should NOT try to process anything
+        let state = make_state(500, 0);
+        let next = state.next_ledger_to_process(); // 501
+        let latest_sequence: u64 = 500;
+
+        assert!(
+            next > latest_sequence,
+            "next_ledger ({}) should exceed latest ({})",
+            next,
+            latest_sequence
+        );
+    }
+
+    #[test]
+    fn test_exactly_at_latest_should_process_one() {
+        // When last_indexed == latest - 1, next_ledger == latest_ledger
+        // Should process exactly one ledger
+        let state = make_state(499, 0);
+        let next = state.next_ledger_to_process(); // 500
+        let latest_sequence: u64 = 500;
+
+        assert_eq!(next, latest_sequence);
+        // ledgers_to_process = min(latest - next + 1, max) = min(1, 10) = 1
+        let ledgers_to_process = std::cmp::min(latest_sequence - next + 1, 10);
+        assert_eq!(ledgers_to_process, 1);
+    }
+
+    #[test]
+    fn test_behind_by_five_should_process_five() {
+        let state = make_state(95, 0);
+        let next = state.next_ledger_to_process(); // 96
+        let latest_sequence: u64 = 100;
+
+        let ledgers_to_process = std::cmp::min(latest_sequence - next + 1, 10);
+        assert_eq!(ledgers_to_process, 5);
+    }
+
+    #[test]
+    fn test_behind_by_more_than_max_capped() {
+        let state = make_state(50, 0);
+        let next = state.next_ledger_to_process(); // 51
+        let latest_sequence: u64 = 100;
+        let max_per_cycle: u64 = 10;
+
+        let ledgers_to_process = std::cmp::min(latest_sequence - next + 1, max_per_cycle);
+        assert_eq!(ledgers_to_process, 10);
     }
 }

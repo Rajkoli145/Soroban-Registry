@@ -3,22 +3,25 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import ContractCard from '@/components/ContractCard';
+import ContractCardSkeleton from '@/components/ContractCardSkeleton';
+import LoadingSkeleton from '@/components/LoadingSkeleton';
 import { Search, Package, CheckCircle, Users, ArrowRight, Sparkles } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import Navbar from '@/components/Navbar';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { logEvent } = useAnalytics();
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['stats'],
     queryFn: () => api.getStats(),
   });
 
-  const { data: recentContracts } = useQuery({
+  const { data: recentContracts, isLoading: contractsLoading } = useQuery({
     queryKey: ['contracts', 'recent'],
     queryFn: () => api.getContracts({ page: 1, page_size: 6 }),
   });
@@ -33,6 +36,30 @@ export default function Home() {
       window.location.href = `/contracts?query=${encodeURIComponent(searchQuery)}`;
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSlashShortcut = event.key === '/' || event.code === 'Slash';
+      if (!isSlashShortcut || event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTypingField = Boolean(
+        activeElement &&
+        (activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          activeElement.tagName === 'SELECT' ||
+          activeElement.isContentEditable),
+      );
+
+      if (isTypingField) return;
+
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -66,10 +93,13 @@ export default function Home() {
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search contracts by name, category, or tag..."
+                  aria-label="Search contracts"
+                  aria-keyshortcuts="/"
                   className="w-full pl-12 pr-4 py-4 rounded-xl border border-border bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary shadow-lg"
                 />
                 <button
@@ -82,39 +112,52 @@ export default function Home() {
             </form>
 
             {/* Stats */}
-            {stats && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
-                <div className="bg-background rounded-xl p-6 border border-border shadow-sm">
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <Package className="w-5 h-5 text-primary" />
-                    <span className="text-3xl font-bold">
-                      {stats.total_contracts}
-                    </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
+              {statsLoading ? (
+                <>
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-background rounded-xl p-6 border border-border shadow-sm">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <LoadingSkeleton width="3rem" height="2.25rem" />
+                      </div>
+                      <LoadingSkeleton width="7rem" height="0.875rem" className="mx-auto" />
+                    </div>
+                  ))}
+                </>
+              ) : stats ? (
+                <>
+                  <div className="bg-background rounded-xl p-6 border border-border shadow-sm">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <Package className="w-5 h-5 text-primary" />
+                      <span className="text-3xl font-bold">
+                        {stats.total_contracts}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Total Contracts</p>
                   </div>
-                  <p className="text-sm text-muted-foreground">Total Contracts</p>
-                </div>
 
-                <div className="bg-background rounded-xl p-6 border border-border shadow-sm">
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                    <span className="text-3xl font-bold">
-                      {stats.verified_contracts}
-                    </span>
+                  <div className="bg-background rounded-xl p-6 border border-border shadow-sm">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                      <span className="text-3xl font-bold">
+                        {stats.verified_contracts}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Verified</p>
                   </div>
-                  <p className="text-sm text-muted-foreground">Verified</p>
-                </div>
 
-                <div className="bg-background rounded-xl p-6 border border-border shadow-sm">
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <Users className="w-5 h-5 text-secondary" />
-                    <span className="text-3xl font-bold">
-                      {stats.total_publishers}
-                    </span>
+                  <div className="bg-background rounded-xl p-6 border border-border shadow-sm">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <Users className="w-5 h-5 text-secondary" />
+                      <span className="text-3xl font-bold">
+                        {stats.total_publishers}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Publishers</p>
                   </div>
-                  <p className="text-sm text-muted-foreground">Publishers</p>
-                </div>
-              </div>
-            )}
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       </section>
@@ -134,7 +177,13 @@ export default function Home() {
           </Link>
         </div>
 
-        {recentContracts && (recentContracts.items?.length ?? 0) > 0 ? (
+        {contractsLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <ContractCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : recentContracts && (recentContracts.items?.length ?? 0) > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {(recentContracts.items ?? []).map((contract) => (
               <ContractCard key={contract.id} contract={contract} />

@@ -1,6 +1,8 @@
 import { api } from '../../lib/api';
+import type { PublishRequest } from '../../lib/api';
 import fetchMock from 'jest-fetch-mock';
-import { ApiError, NetworkError } from '../../lib/errors';
+import { trackEvent } from '../../lib/analytics';
+import { NetworkError } from '../../lib/errors';
 
 jest.mock('../../lib/analytics', () => ({ trackEvent: jest.fn() }));
 
@@ -34,7 +36,7 @@ test('getContract: success and 404 error handling', async () => {
   const contract = { id: 'c2', contract_id: 'c2', wasm_hash: '', name: 'B', publisher_id: 'p2', network: 'testnet', is_verified: true, tags: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   fetchMock.mockResponseOnce(JSON.stringify(contract), { status: 200 });
   const res = await api.getContract('c2');
-  expect((res as any).id).toBe('c2');
+  expect(res.id).toBe('c2');
 
   // 404 case
   fetchMock.mockResponseOnce(JSON.stringify({ message: 'Not found' }), { status: 404 });
@@ -42,18 +44,18 @@ test('getContract: success and 404 error handling', async () => {
 });
 
 test('publishContract: success calls trackEvent, failure tracks error', async () => {
-  const track = require('../../lib/analytics').trackEvent as jest.Mock;
-  const req = { contract_id: 'p1', name: 'P', network: 'mainnet', tags: [], publisher_address: 'G...' };
+  const track = trackEvent as jest.MockedFunction<typeof trackEvent>;
+  const req: PublishRequest = { contract_id: 'p1', name: 'P', network: 'mainnet', tags: [], publisher_address: 'G...' };
 
   fetchMock.mockResponseOnce(JSON.stringify({ id: 'published-id', ...req, wasm_hash: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }), { status: 201 });
-  const published = await api.publishContract(req as any);
+  const published = await api.publishContract(req);
   expect(published.id).toBe('published-id');
   expect(track).toHaveBeenCalledWith('contract_published', expect.any(Object));
 
   // Failure case
   track.mockClear();
   fetchMock.mockResponseOnce(JSON.stringify({ message: 'Server error' }), { status: 500 });
-  await expect(api.publishContract(req as any)).rejects.toBeTruthy();
+  await expect(api.publishContract(req)).rejects.toBeTruthy();
   expect(track).toHaveBeenCalled();
 });
 

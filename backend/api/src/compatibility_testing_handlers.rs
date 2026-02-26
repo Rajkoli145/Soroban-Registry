@@ -139,13 +139,11 @@ pub async fn get_compatibility_matrix(
     Path(contract_id): Path<Uuid>,
 ) -> ApiResult<Json<CompatibilityTestMatrixResponse>> {
     // Verify contract exists
-    let exists: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM contracts WHERE id = $1",
-    )
-    .bind(contract_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
+    let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM contracts WHERE id = $1")
+        .bind(contract_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
 
     if !exists {
         return Err(ApiError::not_found("NotFound", "Contract not found"));
@@ -239,13 +237,11 @@ pub async fn run_compatibility_test(
     Json(body): Json<RunCompatibilityTestRequest>,
 ) -> ApiResult<Json<CompatibilityTestEntry>> {
     // Verify contract exists
-    let exists: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM contracts WHERE id = $1",
-    )
-    .bind(contract_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
+    let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM contracts WHERE id = $1")
+        .bind(contract_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
 
     if !exists {
         return Err(ApiError::not_found("NotFound", "Contract not found"));
@@ -256,11 +252,8 @@ pub async fn run_compatibility_test(
     // against the specified SDK/runtime/network combination.
     let start = std::time::Instant::now();
 
-    let (status, error_message) = simulate_compatibility_test(
-        &body.sdk_version,
-        &body.wasm_runtime,
-        &body.network,
-    );
+    let (status, error_message) =
+        simulate_compatibility_test(&body.sdk_version, &body.wasm_runtime, &body.network);
 
     let duration_ms = start.elapsed().as_millis() as i32;
     let now = Utc::now();
@@ -470,12 +463,11 @@ pub async fn mark_notifications_read(
 pub async fn get_compatibility_dashboard(
     State(state): State<AppState>,
 ) -> ApiResult<Json<CompatibilityDashboardResponse>> {
-    let total_contracts_tested: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT contract_id) FROM contract_compatibility",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
+    let total_contracts_tested: i64 =
+        sqlx::query_scalar("SELECT COUNT(DISTINCT contract_id) FROM contract_compatibility")
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
 
     let overall_compatible: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM contract_compatibility WHERE compatible = 'compatible'",

@@ -9,7 +9,7 @@ use uuid::Uuid;
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Represents a smart contract in the registry
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Contract {
     pub id: Uuid,
     pub contract_id: String,
@@ -36,7 +36,7 @@ pub struct Contract {
 }
 
 /// Response for GET /contracts/:id with optional network-specific slice (Issue #43)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ContractGetResponse {
     #[serde(flatten)]
     pub contract: Contract,
@@ -49,7 +49,7 @@ pub struct ContractGetResponse {
 }
 
 /// Per-network config: address, verified status, min/max version (Issue #43)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NetworkConfig {
     pub contract_id: String,
     pub is_verified: bool,
@@ -60,7 +60,7 @@ pub struct NetworkConfig {
 }
 
 /// Network where the contract is deployed
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "network_type", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum Network {
@@ -80,7 +80,7 @@ impl std::fmt::Display for Network {
 }
 
 /// Upgrade strategy for contract upgrades
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "upgrade_strategy_type", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum UpgradeStrategy {
@@ -91,7 +91,7 @@ pub enum UpgradeStrategy {
 }
 
 /// Contract version information
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractVersion {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -115,7 +115,7 @@ pub struct ContractVersion {
 }
 
 /// Verification status and details
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Verification {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -129,7 +129,7 @@ pub struct Verification {
 }
 
 /// Verification status enum
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "verification_status", rename_all = "lowercase")]
 pub enum VerificationStatus {
     Pending,
@@ -138,7 +138,7 @@ pub enum VerificationStatus {
 }
 
 /// Contract maturity level - indicates stability and production readiness
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub enum MaturityLevel {
     Experimental,
     Beta,
@@ -147,7 +147,7 @@ pub enum MaturityLevel {
 }
 
 /// Publisher/developer information
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Publisher {
     pub id: Uuid,
     pub stellar_address: String,
@@ -159,7 +159,7 @@ pub struct Publisher {
 }
 
 /// Contract interaction statistics
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractStats {
     pub contract_id: Uuid,
     pub total_deployments: i64,
@@ -169,7 +169,7 @@ pub struct ContractStats {
 }
 
 /// GraphNode (minimal contract info for graph rendering)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct GraphNode {
     pub id: Uuid,
     pub contract_id: String,
@@ -181,7 +181,7 @@ pub struct GraphNode {
 }
 
 /// Graph edge (dependency relationship)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct GraphEdge {
     pub source: Uuid,
     pub target: Uuid,
@@ -189,16 +189,17 @@ pub struct GraphEdge {
 }
 
 /// Full graph response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GraphResponse {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
 }
 
 /// Request to publish a new contract
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PublishRequest {
     pub contract_id: String,
+    pub wasm_hash: String,
     pub name: String,
     pub description: Option<String>,
     pub network: Network,
@@ -234,7 +235,7 @@ pub struct UpdateContractStatusRequest {
 }
 
 /// Request to create a new contract version with ABI
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateContractVersionRequest {
     pub contract_id: String,
     pub version: String,
@@ -256,7 +257,7 @@ pub struct CreateContractVersionRequest {
 // Deprecation management (issue #65)
 // ────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DeprecationStatus {
     Active,
@@ -264,7 +265,7 @@ pub enum DeprecationStatus {
     Retired,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DeprecationInfo {
     pub contract_id: String,
     pub status: DeprecationStatus,
@@ -277,7 +278,7 @@ pub struct DeprecationInfo {
     pub dependents_notified: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DeprecateContractRequest {
     pub retirement_at: DateTime<Utc>,
     pub replacement_contract_id: Option<String>,
@@ -285,7 +286,7 @@ pub struct DeprecateContractRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct DeprecationNotification {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -296,7 +297,7 @@ pub struct DeprecationNotification {
 }
 
 /// Response for impact analysis
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ImpactAnalysisResponse {
     pub contract_id: Uuid,
     pub change_type: Option<String>,
@@ -305,14 +306,14 @@ pub struct ImpactAnalysisResponse {
     pub has_cycles: bool,
 }
 /// Dependency declaration in publish request
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DependencyDeclaration {
     pub name: String,
     pub version_constraint: String,
 }
 
 /// Contract dependency record (database row)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractDependency {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -323,7 +324,7 @@ pub struct ContractDependency {
 }
 
 /// Tracks migration scripts between contract versions
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct MigrationScript {
     pub id: Uuid,
     pub from_version: Uuid,
@@ -334,7 +335,7 @@ pub struct MigrationScript {
 }
 
 /// Recursive dependency tree node for API response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DependencyTreeNode {
     pub contract_id: String, // Public key ID
     pub name: String,
@@ -344,7 +345,7 @@ pub struct DependencyTreeNode {
 }
 
 /// Request to verify a contract
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct VerifyRequest {
     pub contract_id: String,
     pub source_code: String,
@@ -353,7 +354,7 @@ pub struct VerifyRequest {
 }
 
 /// Sorting options for contracts
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SortBy {
     CreatedAt,
@@ -365,7 +366,7 @@ pub enum SortBy {
 }
 
 /// Sorting order
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SortOrder {
     Asc,
@@ -373,7 +374,7 @@ pub enum SortOrder {
 }
 
 /// Search/filter parameters for contracts
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ContractSearchParams {
     pub query: Option<String>,
     pub network: Option<Network>,
@@ -392,7 +393,7 @@ pub struct ContractSearchParams {
 }
 
 /// Pagination params for contract versions (limit/offset style)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct VersionPaginationParams {
     #[serde(default = "default_version_limit")]
     pub limit: i64,
@@ -405,7 +406,7 @@ fn default_version_limit() -> i64 {
 }
 
 /// Paginated version response (limit/offset style per issue #32 spec)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PaginatedVersionResponse {
     pub items: Vec<ContractVersion>,
     pub total: i64,
@@ -416,7 +417,7 @@ pub struct PaginatedVersionResponse {
 }
 
 /// Paginated response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PaginatedResponse<T> {
     #[serde(rename = "contracts")]
     pub items: Vec<T>,
@@ -457,7 +458,7 @@ impl<T> PaginatedResponse<T> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// One contract invocation row (DB)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractInteraction {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -474,7 +475,7 @@ pub struct ContractInteraction {
 }
 
 /// Response item for GET /api/contracts/:id/interactions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ContractInteractionResponse {
     pub id: Uuid,
     pub account: Option<String>,
@@ -485,8 +486,7 @@ pub struct ContractInteractionResponse {
     pub created_at: DateTime<Utc>,
 }
 
-/// Query params for GET /api/contracts/:id/interactions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct InteractionsQueryParams {
     #[serde(default = "default_interactions_limit")]
     pub limit: i64,
@@ -507,7 +507,7 @@ fn default_interactions_limit() -> i64 {
 }
 
 /// Request body for POST /api/contracts/:id/interactions (single)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateInteractionRequest {
     pub account: Option<String>,
     pub interaction_type: Option<String>,
@@ -520,13 +520,13 @@ pub struct CreateInteractionRequest {
 }
 
 /// Request body for POST /api/contracts/:id/interactions/batch
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateInteractionBatchRequest {
     pub interactions: Vec<CreateInteractionRequest>,
 }
 
 /// Paginated interactions response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct InteractionsListResponse {
     pub items: Vec<ContractInteractionResponse>,
     pub total: i64,
@@ -554,7 +554,7 @@ pub struct InteractionTimeSeriesResponse {
 }
 
 /// Migration status
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, utoipa::ToSchema)]
 #[sqlx(type_name = "migration_status", rename_all = "snake_case")]
 pub enum MigrationStatus {
     Pending,
@@ -564,7 +564,7 @@ pub enum MigrationStatus {
 }
 
 /// Represents a contract state migration
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Migration {
     pub id: Uuid,
     pub contract_id: String,
@@ -589,7 +589,7 @@ pub struct UpdateMigrationStatusRequest {
     pub log_output: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, utoipa::ToSchema)]
 #[sqlx(type_name = "deployment_environment", rename_all = "lowercase")]
 pub enum DeploymentEnvironment {
     Blue,
@@ -604,7 +604,7 @@ impl std::fmt::Display for DeploymentEnvironment {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, utoipa::ToSchema)]
 #[sqlx(type_name = "deployment_status", rename_all = "lowercase")]
 pub enum DeploymentStatus {
     Active,
@@ -613,7 +613,7 @@ pub enum DeploymentStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractDeployment {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -628,7 +628,7 @@ pub struct ContractDeployment {
     pub error_message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct DeploymentSwitch {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -639,7 +639,7 @@ pub struct DeploymentSwitch {
     pub rollback: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "canary_status", rename_all = "snake_case")]
 pub enum CanaryStatus {
     Pending,
@@ -650,7 +650,7 @@ pub enum CanaryStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "rollout_stage", rename_all = "snake_case")]
 pub enum RolloutStage {
     Stage1,
@@ -660,7 +660,7 @@ pub enum RolloutStage {
     Complete,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct CanaryRelease {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -679,7 +679,7 @@ pub struct CanaryRelease {
     pub created_by: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct CanaryMetric {
     pub id: Uuid,
     pub canary_id: Uuid,
@@ -692,7 +692,7 @@ pub struct CanaryMetric {
     pub p99_response_time_ms: Option<Decimal>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct CanaryUserAssignment {
     pub id: Uuid,
     pub canary_id: Uuid,
@@ -702,7 +702,7 @@ pub struct CanaryUserAssignment {
     pub notified_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateCanaryRequest {
     pub contract_id: String,
     pub to_deployment_id: String,
@@ -710,14 +710,14 @@ pub struct CreateCanaryRequest {
     pub created_by: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AdvanceCanaryRequest {
     pub canary_id: String,
     pub target_percentage: Option<i32>,
     pub advanced_by: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RecordCanaryMetricRequest {
     pub canary_id: String,
     pub requests: i32,
@@ -727,7 +727,7 @@ pub struct RecordCanaryMetricRequest {
     pub p99_response_time_ms: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "ab_test_status", rename_all = "snake_case")]
 pub enum AbTestStatus {
     Draft,
@@ -737,14 +737,14 @@ pub enum AbTestStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "variant_type", rename_all = "snake_case")]
 pub enum VariantType {
     Control,
     Treatment,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct AbTest {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -764,7 +764,7 @@ pub struct AbTest {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct AbTestVariant {
     pub id: Uuid,
     pub test_id: Uuid,
@@ -773,7 +773,7 @@ pub struct AbTestVariant {
     pub traffic_percentage: Decimal,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct AbTestAssignment {
     pub id: Uuid,
     pub test_id: Uuid,
@@ -782,7 +782,7 @@ pub struct AbTestAssignment {
     pub assigned_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct AbTestMetric {
     pub id: Uuid,
     pub test_id: Uuid,
@@ -794,7 +794,7 @@ pub struct AbTestMetric {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct AbTestResult {
     pub id: Uuid,
     pub test_id: Uuid,
@@ -810,7 +810,7 @@ pub struct AbTestResult {
     pub calculated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateAbTestRequest {
     pub contract_id: String,
     pub name: String,
@@ -825,7 +825,7 @@ pub struct CreateAbTestRequest {
     pub created_by: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RecordAbTestMetricRequest {
     pub test_id: String,
     pub user_address: Option<String>,
@@ -834,13 +834,13 @@ pub struct RecordAbTestMetricRequest {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GetVariantRequest {
     pub test_id: String,
     pub user_address: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "metric_type", rename_all = "snake_case")]
 pub enum MetricType {
     ExecutionTime,
@@ -850,7 +850,7 @@ pub enum MetricType {
     ErrorRate,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "alert_severity", rename_all = "lowercase")]
 pub enum AlertSeverity {
     Info,
@@ -858,7 +858,7 @@ pub enum AlertSeverity {
     Critical,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct PerformanceMetric {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -872,7 +872,7 @@ pub struct PerformanceMetric {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct PerformanceAnomaly {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -888,7 +888,7 @@ pub struct PerformanceAnomaly {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct PerformanceAlert {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -906,7 +906,7 @@ pub struct PerformanceAlert {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct PerformanceTrend {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -926,7 +926,7 @@ pub struct PerformanceTrend {
     pub calculated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct PerformanceAlertConfig {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -939,7 +939,7 @@ pub struct PerformanceAlertConfig {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RecordPerformanceMetricRequest {
     pub contract_id: String,
     pub metric_type: MetricType,
@@ -951,7 +951,7 @@ pub struct RecordPerformanceMetricRequest {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateAlertConfigRequest {
     pub contract_id: String,
     pub metric_type: MetricType,
@@ -964,7 +964,7 @@ pub struct CreateAlertConfigRequest {
 // Custom contract metrics (issue #89)
 // ────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "custom_metric_type", rename_all = "snake_case")]
 pub enum CustomMetricType {
     Counter,
@@ -972,7 +972,7 @@ pub enum CustomMetricType {
     Histogram,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct CustomMetric {
     pub id: Uuid,
     pub contract_id: String,
@@ -988,7 +988,7 @@ pub struct CustomMetric {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RecordCustomMetricRequest {
     pub contract_id: String,
     pub metric_name: String,
@@ -1002,7 +1002,7 @@ pub struct RecordCustomMetricRequest {
     pub network: Option<Network>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct CustomMetricAggregate {
     pub contract_id: String,
     pub metric_name: String,
@@ -1024,7 +1024,7 @@ pub struct CustomMetricAggregate {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Types of analytics events tracked by the system
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, utoipa::ToSchema)]
 #[sqlx(type_name = "analytics_event_type", rename_all = "snake_case")]
 pub enum AnalyticsEventType {
     ContractPublished,
@@ -1064,7 +1064,7 @@ pub struct ActivityFeedEntry {
 }
 
 /// A raw analytics event recorded when a contract lifecycle action occurs
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct AnalyticsEvent {
     pub id: Uuid,
     pub event_type: AnalyticsEventType,
@@ -1076,7 +1076,7 @@ pub struct AnalyticsEvent {
 }
 
 /// Pre-computed daily aggregate for a single contract
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct DailyAggregate {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -1099,7 +1099,7 @@ pub struct DailyAggregate {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Top-level response for GET /api/contracts/:id/analytics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ContractAnalyticsResponse {
     pub contract_id: Uuid,
     pub deployments: DeploymentStats,
@@ -1108,7 +1108,7 @@ pub struct ContractAnalyticsResponse {
 }
 
 /// Deployment statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DeploymentStats {
     pub count: i64,
     pub unique_users: i64,
@@ -1116,39 +1116,39 @@ pub struct DeploymentStats {
 }
 
 /// Interactor / unique-user statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct InteractorStats {
     pub unique_count: i64,
     pub top_users: Vec<TopUser>,
 }
 
 /// A user ranked by interaction count
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TopUser {
     pub address: String,
     pub count: i64,
 }
 
 /// One data-point in the 30-day timeline
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TimelineEntry {
     pub date: chrono::NaiveDate,
     pub count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DeployGreenRequest {
     pub contract_id: String,
     pub wasm_hash: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SwitchDeploymentRequest {
     pub contract_id: String,
     pub force: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct HealthCheckRequest {
     pub contract_id: String,
     pub environment: DeploymentEnvironment,
@@ -1160,7 +1160,7 @@ pub struct HealthCheckRequest {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Query parameters for the trending contracts endpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TrendingParams {
     /// Max results to return (default 10, max 50)
     pub limit: Option<i64>,
@@ -1169,7 +1169,7 @@ pub struct TrendingParams {
 }
 
 /// Response DTO for a trending contract
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct TrendingContract {
     // Core contract fields
     pub id: Uuid,
@@ -1194,7 +1194,7 @@ pub struct TrendingContract {
 // ════════════════════════════════════════════════════════════════════════════
 
 /// The type of mutation that triggered an audit log entry.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "audit_action_type", rename_all = "snake_case")]
 pub enum AuditActionType {
     ContractPublished,
@@ -1220,7 +1220,7 @@ impl std::fmt::Display for AuditActionType {
 }
 
 /// One immutable row in `contract_audit_log`.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractAuditLog {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -1235,7 +1235,7 @@ pub struct ContractAuditLog {
 }
 
 /// Full contract state captured at each audited change in `contract_snapshots`.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractSnapshot {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -1246,7 +1246,7 @@ pub struct ContractSnapshot {
 }
 
 /// A single field-level change between two snapshots.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FieldChange {
     pub field: String,
     pub from: serde_json::Value,
@@ -1254,7 +1254,7 @@ pub struct FieldChange {
 }
 
 /// Response for GET /api/contracts/:id/versions/:v1/diff/:v2
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct VersionDiff {
     pub contract_id: Uuid,
     pub from_version: i32,
@@ -1268,14 +1268,14 @@ pub struct VersionDiff {
 }
 
 /// Request body for POST /api/contracts/:id/rollback/:snapshot_id
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RollbackRequest {
     /// Stellar address (or admin service ID) authorising the rollback
     pub changed_by: String,
 }
 
 // Multisig deployment types
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct MultisigPolicy {
     pub id: Uuid,
     pub name: String,
@@ -1286,7 +1286,7 @@ pub struct MultisigPolicy {
     pub created_by: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct DeployProposal {
     pub id: Uuid,
     pub contract_name: String,
@@ -1300,7 +1300,7 @@ pub struct DeployProposal {
     pub proposer: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ProposalSignature {
     pub id: Uuid,
     pub proposal_id: Uuid,
@@ -1308,7 +1308,7 @@ pub struct ProposalSignature {
 }
 
 /// Paginated response for audit log
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ProposalWithSignatures {
     pub proposal: DeployProposal,
     pub policy: MultisigPolicy,
@@ -1316,7 +1316,7 @@ pub struct ProposalWithSignatures {
     pub signatures_needed: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AuditLogPage {
     pub items: Vec<ContractAuditLog>,
     pub total: i64,
@@ -1324,12 +1324,65 @@ pub struct AuditLogPage {
     pub total_pages: i64,
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Cursor-based pagination  (issue #337)
+// Used by activity-feed and any future cursor-paginated endpoints.
+// PaginatedResponse (offset-based) above is left completely untouched.
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Query parameters for the activity feed endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityFeedParams {
+    /// ISO-8601 timestamp. Only events older than this are returned.
+    /// Omit on the first request; use `next_cursor` from the previous
+    /// response on subsequent requests.
+    pub cursor: Option<DateTime<Utc>>,
+
+    /// How many events to return (default 20, max 100).
+    #[serde(default = "default_activity_limit")]
+    pub limit: i64,
+
+    /// Optionally filter by event type.
+    pub event_type: Option<AnalyticsEventType>,
+}
+
+fn default_activity_limit() -> i64 {
+    20
+}
+
+/// Response for cursor-paginated endpoints.
+/// `next_cursor` is `None` when `has_more` is false (last page).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CursorPaginatedResponse<T: Serialize> {
+    pub data: Vec<T>,
+    /// Real total matching the applied filters — from COUNT(*).
+    pub total: i64,
+    /// True when more results exist beyond this page.
+    pub has_more: bool,
+    /// Pass this value as `cursor` to fetch the next page.
+    /// `None` on the last page.
+    pub next_cursor: Option<DateTime<Utc>>,
+}
+
+impl<T: Serialize> CursorPaginatedResponse<T> {
+    pub fn new(data: Vec<T>, total: i64, limit: i64, next_cursor: Option<DateTime<Utc>>) -> Self {
+        let has_more = data.len() as i64 == limit;
+        Self {
+            has_more,
+            // Only emit a cursor when there really are more pages.
+            next_cursor: if has_more { next_cursor } else { None },
+            data,
+            total,
+        }
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Config Management types
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Represents a contract configuration version in the registry
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractConfig {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -1342,7 +1395,7 @@ pub struct ContractConfig {
 }
 
 /// Request to create a new configuration version
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ConfigCreateRequest {
     pub environment: String,
     pub config_data: serde_json::Value,
@@ -1351,14 +1404,14 @@ pub struct ConfigCreateRequest {
 }
 
 /// Request to rollback to an old configuration version
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ConfigRollbackRequest {
     pub roll_back_to_version: i32,
     pub created_by: String,
 }
 
 /// Response object for returning configurations (without secrets_data when returning publicly)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ContractConfigResponse {
     pub id: Uuid,
     pub contract_id: Uuid,
@@ -1389,7 +1442,7 @@ impl From<ContractConfig> for ContractConfigResponse {
 // DATA RESIDENCY CONTROLS  (issue #100)
 // ═══════════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema)]
 #[sqlx(type_name = "residency_decision", rename_all = "lowercase")]
 pub enum ResidencyDecision {
     Allowed,
@@ -1702,24 +1755,54 @@ pub struct TransparencyLogQueryParams {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
-#[sqlx(type_name = "health_status", rename_all = "snake_case")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
     Healthy,
     Warning,
     Critical,
 }
 
+impl std::fmt::Display for HealthStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Healthy => write!(f, "healthy"),
+            Self::Warning => write!(f, "warning"),
+            Self::Critical => write!(f, "critical"),
+        }
+    }
+}
+
+impl std::str::FromStr for HealthStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "healthy" => Ok(Self::Healthy),
+            "warning" => Ok(Self::Warning),
+            "critical" => Ok(Self::Critical),
+            other => Err(format!("unknown health status: {}", other)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ContractHealth {
     pub contract_id: Uuid,
-    pub status: HealthStatus,
+    pub status: String,
     pub last_activity: DateTime<Utc>,
     pub security_score: i32,
     pub audit_date: Option<DateTime<Utc>>,
     pub total_score: i32,
     pub recommendations: Vec<String>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl ContractHealth {
+    /// Returns the typed `HealthStatus` from the stored string.
+    pub fn health_status(&self) -> Result<HealthStatus, String> {
+        self.status.parse()
+    }
 }
 
 // Backup and disaster recovery types
@@ -1780,39 +1863,23 @@ impl std::fmt::Display for ReleaseNotesStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionChange {
     pub name: String,
-    pub change_type: String, // "added", "removed", "modified"
+    pub change_type: String,
     pub old_signature: Option<String>,
     pub new_signature: Option<String>,
     pub is_breaking: bool,
 }
 
 /// Summary of a code diff between two contract versions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DiffSummary {
     pub files_changed: i32,
     pub lines_added: i32,
     pub lines_removed: i32,
     pub function_changes: Vec<FunctionChange>,
     pub has_breaking_changes: bool,
-    /// Category counts: features, fixes, breaking
     pub features_count: i32,
     pub fixes_count: i32,
     pub breaking_count: i32,
-}
-
-impl Default for DiffSummary {
-    fn default() -> Self {
-        Self {
-            files_changed: 0,
-            lines_added: 0,
-            lines_removed: 0,
-            function_changes: Vec::new(),
-            has_breaking_changes: false,
-            features_count: 0,
-            fixes_count: 0,
-            breaking_count: 0,
-        }
-    }
 }
 
 /// Stored release notes generation record
@@ -1835,32 +1902,100 @@ pub struct ReleaseNotesGenerated {
 /// Request to auto-generate release notes for a contract version
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateReleaseNotesRequest {
-    /// The version to generate notes for (must already exist in contract_versions)
     pub version: String,
-    /// Optional explicit previous version to diff against.
-    /// If omitted, the latest version before `version` is used automatically.
     pub previous_version: Option<String>,
-    /// URL to the source repository (used for git diff)
     pub source_url: Option<String>,
-    /// Optional raw CHANGELOG.md content to parse
     pub changelog_content: Option<String>,
-    /// Contract address to include in the notes
     pub contract_address: Option<String>,
 }
 
 /// Request to manually edit release notes before publishing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateReleaseNotesRequest {
-    /// Edited release notes text
     pub notes_text: String,
 }
 
 /// Request to publish (finalize) release notes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublishReleaseNotesRequest {
-    /// If true, also update the `release_notes` column on `contract_versions`
     #[serde(default = "default_true")]
     pub update_version_record: bool,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTRACT DEPLOYMENT SIMULATION (Issue #256)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulateDeployRequest {
+    pub wasm_binary: String,
+    pub contract_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub network: Network,
+    pub category: Option<String>,
+    pub tags: Vec<String>,
+    pub publisher_address: String,
+    #[serde(default)]
+    pub dependencies: Vec<DependencyDeclaration>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationResult {
+    pub valid: bool,
+    pub errors: Vec<SimulationError>,
+    pub warnings: Vec<SimulationWarning>,
+    pub gas_estimate: GasEstimate,
+    pub performance_metrics: PerformanceMetrics,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub abi_preview: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract_functions: Option<Vec<ContractFunctionInfo>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationError {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationWarning {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub severity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GasEstimate {
+    pub total_cost_stroops: i64,
+    pub total_cost_xlm: f64,
+    pub wasm_size_kb: f64,
+    pub complexity_factor: f64,
+    pub deployment_cost_stroops: i64,
+    pub storage_cost_stroops: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceMetrics {
+    pub estimated_execution_time_ms: u64,
+    pub memory_estimate_kb: u64,
+    pub function_count: u32,
+    pub table_size_bytes: u32,
+    pub data_section_bytes: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractFunctionInfo {
+    pub name: String,
+    pub param_count: u32,
+    pub return_type: Option<String>,
+    pub is_view: bool,
 }
 
 fn default_true() -> bool {

@@ -10,6 +10,7 @@ import TopPublishersTable from '@/components/stats/TopPublishersTable';
 import NetworkDistribution from '@/components/stats/NetworkDistribution';
 import TimePeriodSelector from '@/components/stats/TimePeriodSelector';
 import StatsSkeleton from '@/components/stats/StatsSkeleton';
+import Navbar from '@/components/Navbar';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function StatsPage() {
@@ -18,30 +19,35 @@ export default function StatsPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-        <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg max-w-md w-full text-center border border-red-200 dark:border-red-900">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-            Failed to load statistics
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            {error.message || 'An unexpected error occurred while fetching data.'}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Try Again
-          </button>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Navbar />
+        <div className="flex items-center justify-center min-h-[calc(100vh-80px)] p-4">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg max-w-md w-full text-center border border-red-200 dark:border-red-900">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+              Failed to load statistics
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              {error.message || 'An unexpected error occurred while fetching data.'}
+            </p>
+            <button
+              onClick={() => refetch()}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <Navbar />
+      <div className="py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto space-y-8">
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -82,6 +88,7 @@ export default function StatsPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

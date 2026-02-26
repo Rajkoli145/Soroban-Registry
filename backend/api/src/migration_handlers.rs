@@ -117,11 +117,10 @@ const MIGRATION_ADVISORY_LOCK_KEY: i64 = 252_252_252;
 
 /// Try to acquire the PostgreSQL advisory lock. Returns true if acquired.
 async fn try_acquire_lock(pool: &sqlx::PgPool) -> Result<bool, sqlx::Error> {
-    let acquired: bool =
-        sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-            .bind(MIGRATION_ADVISORY_LOCK_KEY)
-            .fetch_one(pool)
-            .await?;
+    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+        .bind(MIGRATION_ADVISORY_LOCK_KEY)
+        .fetch_one(pool)
+        .await?;
     Ok(acquired)
 }
 
@@ -175,13 +174,12 @@ pub async fn get_migration_status(
         .count() as i64;
 
     // Check advisory lock status
-    let has_lock: bool = sqlx::query_scalar(
-        "SELECT NOT pg_try_advisory_lock($1) OR pg_advisory_unlock($1)",
-    )
-    .bind(MIGRATION_ADVISORY_LOCK_KEY)
-    .fetch_one(&state.db)
-    .await
-    .unwrap_or(false);
+    let has_lock: bool =
+        sqlx::query_scalar("SELECT NOT pg_try_advisory_lock($1) OR pg_advisory_unlock($1)")
+            .bind(MIGRATION_ADVISORY_LOCK_KEY)
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or(false);
 
     let mut warnings = Vec::new();
 
@@ -248,13 +246,12 @@ async fn register_migration_inner(
     body: &RegisterMigrationRequest,
 ) -> ApiResult<Json<RegisterMigrationResponse>> {
     // Check if version already exists
-    let exists: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM schema_versions WHERE version = $1",
-    )
-    .bind(body.version)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM schema_versions WHERE version = $1")
+            .bind(body.version)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
 
     if exists {
         return Err(ApiError::conflict(
@@ -353,7 +350,10 @@ async fn rollback_migration_inner(
     .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
 
     let migration = migration.ok_or_else(|| {
-        ApiError::not_found("NotFound", format!("Migration version {} not found", version))
+        ApiError::not_found(
+            "NotFound",
+            format!("Migration version {} not found", version),
+        )
     })?;
 
     if migration.rolled_back_at.is_some() {
@@ -513,17 +513,18 @@ pub async fn get_migration_version(
     .await
     .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
 
-    migration
-        .map(Json)
-        .ok_or_else(|| ApiError::not_found("NotFound", format!("Migration version {} not found", version)))
+    migration.map(Json).ok_or_else(|| {
+        ApiError::not_found(
+            "NotFound",
+            format!("Migration version {} not found", version),
+        )
+    })
 }
 
 /// GET /api/admin/migrations/lock
 ///
 /// Check the current advisory lock status.
-pub async fn get_lock_status(
-    State(state): State<AppState>,
-) -> ApiResult<Json<LockStatusResponse>> {
+pub async fn get_lock_status(State(state): State<AppState>) -> ApiResult<Json<LockStatusResponse>> {
     // Try to acquire and immediately release to check if lock is free
     let can_lock = try_acquire_lock(&state.db)
         .await
@@ -533,12 +534,11 @@ pub async fn get_lock_status(
         let _ = release_lock(&state.db).await;
     }
 
-    let lock_row: Option<(Option<String>, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "SELECT locked_by, locked_at FROM schema_migration_locks WHERE id = 1",
-    )
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
+    let lock_row: Option<(Option<String>, Option<DateTime<Utc>>)> =
+        sqlx::query_as("SELECT locked_by, locked_at FROM schema_migration_locks WHERE id = 1")
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| ApiError::internal(format!("DB error: {e}")))?;
 
     let (locked_by, locked_at) = lock_row.unwrap_or((None, None));
 
@@ -566,26 +566,22 @@ pub async fn check_migrations_on_startup(pool: &sqlx::PgPool) {
     .unwrap_or(false);
 
     if !table_exists {
-        tracing::warn!(
-            "schema_versions table not found. Migration versioning is not initialized."
-        );
+        tracing::warn!("schema_versions table not found. Migration versioning is not initialized.");
         return;
     }
 
     // Get current state
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM schema_versions WHERE rolled_back_at IS NULL",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM schema_versions WHERE rolled_back_at IS NULL")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
 
-    let current_version: Option<i32> = sqlx::query_scalar(
-        "SELECT MAX(version) FROM schema_versions WHERE rolled_back_at IS NULL",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(None);
+    let current_version: Option<i32> =
+        sqlx::query_scalar("SELECT MAX(version) FROM schema_versions WHERE rolled_back_at IS NULL")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(None);
 
     tracing::info!(
         applied_migrations = count,

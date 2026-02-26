@@ -169,15 +169,37 @@ fn test_collect_unique_networks() {
 fn test_count_by_status() {
     let entries = vec![
         make_entry("22.0.0", "wasmtime-25.0", "testnet", "compatible", None),
-        make_entry("20.0.0", "wasmtime-24.0", "testnet", "warning", Some("deprecations")),
-        make_entry("19.0.0", "wasmtime-23.0", "testnet", "incompatible", Some("too old")),
+        make_entry(
+            "20.0.0",
+            "wasmtime-24.0",
+            "testnet",
+            "warning",
+            Some("deprecations"),
+        ),
+        make_entry(
+            "19.0.0",
+            "wasmtime-23.0",
+            "testnet",
+            "incompatible",
+            Some("too old"),
+        ),
         make_entry("21.0.0", "wasmtime-25.0", "mainnet", "compatible", None),
-        make_entry("19.5.0", "wasmtime-23.0", "mainnet", "incompatible", Some("too old")),
+        make_entry(
+            "19.5.0",
+            "wasmtime-23.0",
+            "mainnet",
+            "incompatible",
+            Some("too old"),
+        ),
     ];
 
     assert_eq!(count_by_status(&entries, "compatible"), 2);
     assert_eq!(count_by_status(&entries, "warning"), 1);
     assert_eq!(count_by_status(&entries, "incompatible"), 2);
+    assert_eq!(
+        entries.iter().filter(|e| e.error_message.is_some()).count(),
+        3
+    );
 }
 
 #[test]
@@ -193,7 +215,10 @@ fn test_empty_entries_produce_empty_dimensions() {
 #[test]
 fn test_matrix_lookup_key_format() {
     let entry = make_entry("22.0.0", "wasmtime-25.0", "testnet", "compatible", None);
-    let key = format!("{}|{}|{}", entry.sdk_version, entry.wasm_runtime, entry.network);
+    let key = format!(
+        "{}|{}|{}",
+        entry.sdk_version, entry.wasm_runtime, entry.network
+    );
     assert_eq!(key, "22.0.0|wasmtime-25.0|testnet");
 }
 
@@ -217,12 +242,18 @@ fn test_full_matrix_construction() {
     assert_eq!(entries.len(), 8);
 
     // SDK 21.x should all be compatible (major >= 21)
-    let sdk21_entries: Vec<_> = entries.iter().filter(|e| e.sdk_version == "21.0.0").collect();
+    let sdk21_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| e.sdk_version == "21.0.0")
+        .collect();
     assert_eq!(sdk21_entries.len(), 4);
     assert!(sdk21_entries.iter().all(|e| e.status == "compatible"));
 
     // SDK 22.x should all be compatible
-    let sdk22_entries: Vec<_> = entries.iter().filter(|e| e.sdk_version == "22.0.0").collect();
+    let sdk22_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| e.sdk_version == "22.0.0")
+        .collect();
     assert_eq!(sdk22_entries.len(), 4);
     assert!(sdk22_entries.iter().all(|e| e.status == "compatible"));
 }

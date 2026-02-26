@@ -83,11 +83,12 @@ impl PartialOrd for SemVer {
 impl Ord for SemVer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Compare major.minor.patch first
-        let base_cmp = self.major
+        let base_cmp = self
+            .major
             .cmp(&other.major)
             .then(self.minor.cmp(&other.minor))
             .then(self.patch.cmp(&other.patch));
-        
+
         if base_cmp != std::cmp::Ordering::Equal {
             return base_cmp;
         }
@@ -116,9 +117,9 @@ fn compare_pre_release(a: &str, b: &str) -> std::cmp::Ordering {
 
         let cmp = match (a_num, b_num) {
             (Ok(a_n), Ok(b_n)) => a_n.cmp(&b_n),
-            (Ok(_), Err(_)) => std::cmp::Ordering::Less,  // numeric < alphanumeric
+            (Ok(_), Err(_)) => std::cmp::Ordering::Less, // numeric < alphanumeric
             (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
-            (Err(_), Err(_)) => a_part.cmp(b_part),  // lexical comparison
+            (Err(_), Err(_)) => a_part.cmp(b_part), // lexical comparison
         };
 
         if cmp != std::cmp::Ordering::Equal {
@@ -159,7 +160,9 @@ impl VersionConstraint {
                 if req.major == 0 {
                     if req.minor == 0 {
                         // ^0.0.x := >=0.0.x <0.0.(x+1) - exact patch match with major=0 and minor=0
-                        return version.major == 0 && version.minor == 0 && version.patch == req.patch;
+                        return version.major == 0
+                            && version.minor == 0
+                            && version.patch == req.patch;
                     }
                     // ^0.x.y := >=0.x.y <0.(x+1).0
                     return version.major == 0 && version.minor == req.minor;
@@ -278,23 +281,53 @@ mod tests {
         let constraint = VersionConstraint::parse("^0.0.3").unwrap();
 
         // Should match 0.0.3
-        let v = SemVer { major: 0, minor: 0, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 0,
+            minor: 0,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v), "^0.0.3 should match 0.0.3");
 
         // Should NOT match 0.0.4
-        let v = SemVer { major: 0, minor: 0, patch: 4, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 0,
+            minor: 0,
+            patch: 4,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v), "^0.0.3 should not match 0.0.4");
 
         // Should NOT match 0.5.3 (bug fix - was incorrectly matching)
-        let v = SemVer { major: 0, minor: 5, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 0,
+            minor: 5,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v), "^0.0.3 should not match 0.5.3");
 
         // Should NOT match 1.0.3
-        let v = SemVer { major: 1, minor: 0, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 0,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v), "^0.0.3 should not match 1.0.3");
 
         // Should NOT match 0.0.2
-        let v = SemVer { major: 0, minor: 0, patch: 2, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 0,
+            minor: 0,
+            patch: 2,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v), "^0.0.3 should not match 0.0.2");
     }
 
@@ -303,19 +336,43 @@ mod tests {
         let constraint = VersionConstraint::parse("^0.2.3").unwrap();
 
         // Should match 0.2.3
-        let v = SemVer { major: 0, minor: 2, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 0,
+            minor: 2,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v));
 
         // Should match 0.2.5
-        let v = SemVer { major: 0, minor: 2, patch: 5, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 0,
+            minor: 2,
+            patch: 5,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v));
 
         // Should NOT match 0.3.0
-        let v = SemVer { major: 0, minor: 3, patch: 0, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 0,
+            minor: 3,
+            patch: 0,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v));
 
         // Should NOT match 1.2.3
-        let v = SemVer { major: 1, minor: 2, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v));
     }
 
@@ -324,15 +381,33 @@ mod tests {
         let constraint = VersionConstraint::parse("^1.2.3").unwrap();
 
         // Should match 1.2.3
-        let v = SemVer { major: 1, minor: 2, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v));
 
         // Should match 1.5.0
-        let v = SemVer { major: 1, minor: 5, patch: 0, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 5,
+            patch: 0,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v));
 
         // Should NOT match 2.0.0
-        let v = SemVer { major: 2, minor: 0, patch: 0, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 2,
+            minor: 0,
+            patch: 0,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v));
     }
 
@@ -344,7 +419,7 @@ mod tests {
         assert!(v1 < v2);
 
         // 1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-alpha.beta < 1.0.0-beta < 1.0.0-beta.2 < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0
-        let versions = vec![
+        let versions = [
             "1.0.0-alpha",
             "1.0.0-alpha.1",
             "1.0.0-alpha.beta",
@@ -355,7 +430,7 @@ mod tests {
             "1.0.0",
         ];
 
-        for i in 0..versions.len() - 1 {
+        for i in 0..(versions.len() - 1) {
             let v1 = SemVer::parse(versions[i]).unwrap();
             let v2 = SemVer::parse(versions[i + 1]).unwrap();
             assert!(v1 < v2, "{} should be < {}", versions[i], versions[i + 1]);
@@ -379,15 +454,33 @@ mod tests {
         let constraint = VersionConstraint::parse("~1.2.3").unwrap();
 
         // Should match 1.2.3
-        let v = SemVer { major: 1, minor: 2, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v));
 
         // Should match 1.2.5
-        let v = SemVer { major: 1, minor: 2, patch: 5, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 2,
+            patch: 5,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v));
 
         // Should NOT match 1.3.0
-        let v = SemVer { major: 1, minor: 3, patch: 0, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 3,
+            patch: 0,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v));
     }
 
@@ -396,11 +489,23 @@ mod tests {
         let constraint = VersionConstraint::parse("1.2.3").unwrap();
 
         // Should match 1.2.3
-        let v = SemVer { major: 1, minor: 2, patch: 3, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(constraint.matches(&v));
 
         // Should NOT match 1.2.4
-        let v = SemVer { major: 1, minor: 2, patch: 4, pre_release: None, build_metadata: None };
+        let v = SemVer {
+            major: 1,
+            minor: 2,
+            patch: 4,
+            pre_release: None,
+            build_metadata: None,
+        };
         assert!(!constraint.matches(&v));
     }
 

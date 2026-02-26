@@ -57,10 +57,20 @@
 //! }
 //! ```
 
+pub mod enhanced_extractors;
 pub mod extractors;
+pub mod payload_size;
 pub mod requests;
 pub mod sanitizers;
+pub mod url_validation;
+pub mod validation_rate_limit;
 pub mod validators;
+
+#[cfg(test)]
+mod comprehensive_tests;
+
+#[cfg(test)]
+mod integration_guide;
 
 // Re-export commonly used items
 pub use extractors::{FieldError, Validatable, ValidatedJson, ValidationBuilder, ValidationError};
@@ -68,6 +78,10 @@ pub use sanitizers::{
     normalize_contract_id, normalize_stellar_address, sanitize_description,
     sanitize_description_optional, sanitize_name, sanitize_tags, sanitize_url_optional, strip_html,
     trim, trim_optional,
+};
+pub use url_validation::{
+    get_domain_whitelist, parse_url_components, validate_https_url_only,
+    validate_url_https_only_with_whitelist, UrlComponents,
 };
 pub use validators::{
     validate_category_whitelist, validate_contract_id, validate_length, validate_name_format,

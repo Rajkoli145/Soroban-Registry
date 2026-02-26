@@ -18,6 +18,7 @@ export interface StatsResponse {
   }[];
   topPublishers: {
     name: string;
+    address: string;
     contractsDeployed: number;
   }[];
 }

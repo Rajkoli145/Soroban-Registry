@@ -35,10 +35,7 @@ pub async fn get_release_notes(
     .ok_or_else(|| {
         ApiError::not_found(
             "ReleaseNotesNotFound",
-            format!(
-                "No release notes found for version '{}'",
-                version
-            ),
+            format!("No release notes found for version '{}'", version),
         )
     })?;
 
@@ -121,13 +118,12 @@ pub async fn generate_release_notes(
         }
         None => {
             // Find the latest version before the target version
-            let all_versions: Vec<String> = sqlx::query_scalar(
-                "SELECT version FROM contract_versions WHERE contract_id = $1",
-            )
-            .bind(contract_uuid)
-            .fetch_all(&state.db)
-            .await
-            .map_err(|err| db_internal_error("fetch versions", err))?;
+            let all_versions: Vec<String> =
+                sqlx::query_scalar("SELECT version FROM contract_versions WHERE contract_id = $1")
+                    .bind(contract_uuid)
+                    .fetch_all(&state.db)
+                    .await
+                    .map_err(|err| db_internal_error("fetch versions", err))?;
 
             let mut parsed: Vec<SemVer> = all_versions
                 .iter()
@@ -163,8 +159,7 @@ pub async fn generate_release_notes(
         req.contract_address.as_deref(),
     );
 
-    let diff_json = serde_json::to_value(&diff_summary)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let diff_json = serde_json::to_value(&diff_summary).unwrap_or_else(|_| serde_json::json!({}));
 
     // Upsert into release_notes_generated (re-generating overwrites existing draft)
     let record = sqlx::query_as::<_, ReleaseNotesGenerated>(
@@ -356,23 +351,21 @@ async fn build_diff_summary(
     new_version: &str,
 ) -> ApiResult<DiffSummary> {
     // Try to load ABIs for both versions
-    let old_abi: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT abi FROM contract_abis WHERE contract_id = $1 AND version = $2",
-    )
-    .bind(contract_uuid)
-    .bind(old_version)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|err| db_internal_error("fetch old ABI", err))?;
+    let old_abi: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT abi FROM contract_abis WHERE contract_id = $1 AND version = $2")
+            .bind(contract_uuid)
+            .bind(old_version)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|err| db_internal_error("fetch old ABI", err))?;
 
-    let new_abi: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT abi FROM contract_abis WHERE contract_id = $1 AND version = $2",
-    )
-    .bind(contract_uuid)
-    .bind(new_version)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|err| db_internal_error("fetch new ABI", err))?;
+    let new_abi: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT abi FROM contract_abis WHERE contract_id = $1 AND version = $2")
+            .bind(contract_uuid)
+            .bind(new_version)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|err| db_internal_error("fetch new ABI", err))?;
 
     let mut diff = DiffSummary::default();
 
@@ -473,14 +466,13 @@ async fn build_initial_diff_summary(
     contract_id: &str,
     version: &str,
 ) -> ApiResult<DiffSummary> {
-    let abi: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT abi FROM contract_abis WHERE contract_id = $1 AND version = $2",
-    )
-    .bind(contract_uuid)
-    .bind(version)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|err| db_internal_error("fetch ABI", err))?;
+    let abi: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT abi FROM contract_abis WHERE contract_id = $1 AND version = $2")
+            .bind(contract_uuid)
+            .bind(version)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|err| db_internal_error("fetch ABI", err))?;
 
     let mut diff = DiffSummary::default();
 
@@ -530,14 +522,14 @@ fn extract_functions_from_abi(
                 .and_then(|i| i.as_array())
                 .map(|arr| {
                     arr.iter()
-                        .filter_map(|inp| {
+                        .map(|inp| {
                             let param_name =
                                 inp.get("name").and_then(|n| n.as_str()).unwrap_or("_");
                             let param_type = inp
                                 .get("type")
                                 .map(|t| format!("{}", t))
                                 .unwrap_or_else(|| "unknown".to_string());
-                            Some(format!("{}: {}", param_name, param_type))
+                            format!("{}: {}", param_name, param_type)
                         })
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -549,12 +541,10 @@ fn extract_functions_from_abi(
                 .and_then(|o| o.as_array())
                 .map(|arr| {
                     arr.iter()
-                        .filter_map(|out| {
-                            Some(
-                                out.get("type")
-                                    .map(|t| format!("{}", t))
-                                    .unwrap_or_else(|| "unknown".to_string()),
-                            )
+                        .map(|out| {
+                            out.get("type")
+                                .map(|t| format!("{}", t))
+                                .unwrap_or_else(|| "unknown".to_string())
                         })
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -600,21 +590,15 @@ fn extract_changelog_section(changelog: &str, version: &str) -> String {
 
     // Find the end: next `## ` heading or end of file
     let mut end = lines.len();
-    for i in (start + 1)..lines.len() {
-        let trimmed = lines[i].trim();
+    for (i, line) in lines.iter().enumerate().skip(start + 1) {
+        let trimmed = line.trim();
         if trimmed.starts_with("## ") {
             end = i;
             break;
         }
     }
 
-    lines[start..end]
-        .iter()
-        .copied()
-        .collect::<Vec<&str>>()
-        .join("\n")
-        .trim()
-        .to_string()
+    lines[start..end].to_vec().join("\n").trim().to_string()
 }
 
 /// Render standardized release notes from the diff, changelog, and metadata.
@@ -645,10 +629,7 @@ fn render_release_notes_template(
 
     // ── Summary ──────────────────────────────────────────────────────────
     sections.push("## Summary".to_string());
-    sections.push(format!(
-        "- **Files changed:** {}",
-        diff.files_changed
-    ));
+    sections.push(format!("- **Files changed:** {}", diff.files_changed));
     sections.push(format!(
         "- **Lines added:** {} | **Lines removed:** {}",
         diff.lines_added, diff.lines_removed
@@ -678,19 +659,13 @@ fn render_release_notes_template(
             if fc.is_breaking {
                 match fc.change_type.as_str() {
                     "removed" => {
-                        sections.push(format!(
-                            "- **REMOVED** `{}`",
-                            fc.name
-                        ));
+                        sections.push(format!("- **REMOVED** `{}`", fc.name));
                         if let Some(ref old) = fc.old_signature {
                             sections.push(format!("  - Was: `{}`", old));
                         }
                     }
                     "modified" => {
-                        sections.push(format!(
-                            "- **SIGNATURE CHANGED** `{}`",
-                            fc.name
-                        ));
+                        sections.push(format!("- **SIGNATURE CHANGED** `{}`", fc.name));
                         if let Some(ref old) = fc.old_signature {
                             sections.push(format!("  - Old: `{}`", old));
                         }

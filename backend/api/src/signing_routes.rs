@@ -28,4 +28,12 @@ pub fn signing_routes() -> Router<AppState> {
             "/api/signatures/transparency",
             get(signing_handlers::get_transparency_log),
         )
+        .route(
+            "/api/signatures/transparency/verify",
+            get(signing_handlers::verify_transparency_log),
+        )
+        .route(
+            "/api/signatures/transparency-log/verify",
+            get(signing_handlers::verify_transparency_log),
+        )
 }

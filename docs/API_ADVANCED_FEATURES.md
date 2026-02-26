@@ -18,6 +18,27 @@ This document covers advanced features of the Soroban Registry API including bat
 
 ---
 
+## Planned Endpoints (Return 501)
+
+The following endpoints are routed but intentionally return `501 Not Implemented` until full functionality ships:
+
+- `GET /api/contracts/:id/state/:key`
+- `PUT /api/contracts/:id/state/:key`
+- `GET /api/contracts/:id/trust-score`
+- `GET /api/contracts/:id/deployment-status`
+- `POST /api/contracts/:id/deploy-green`
+
+Response shape:
+
+```json
+{
+  "error": "not_implemented",
+  "message": "This endpoint is planned but not yet functional"
+}
+```
+
+---
+
 ## Batch Operations
 
 Batch operations allow you to perform multiple actions in a single API call, reducing network overhead and improving performance.

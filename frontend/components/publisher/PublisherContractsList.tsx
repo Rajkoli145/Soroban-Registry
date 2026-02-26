@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { ContractSummary } from "@/types/publisher";
 import { Tag } from "@/types/tag";
 import TagAutocomplete from "@/components/tags/TagAutocomplete";
@@ -15,6 +15,7 @@ type FilterStatus = "all" | "verified" | "failed" | "pending";
 export function PublisherContractsList({ contracts }: PublisherContractsListProps) {
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const filteredContracts = useMemo(() => {
     return contracts
@@ -26,6 +27,30 @@ export function PublisherContractsList({ contracts }: PublisherContractsListProp
       })
       .sort((a, b) => new Date(b.deployedAt).getTime() - new Date(a.deployedAt).getTime());
   }, [contracts, statusFilter, searchTerm]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSlashShortcut = event.key === "/" || event.code === "Slash";
+      if (!isSlashShortcut || event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTypingField = Boolean(
+        activeElement &&
+          (activeElement.tagName === "INPUT" ||
+            activeElement.tagName === "TEXTAREA" ||
+            activeElement.tagName === "SELECT" ||
+            activeElement.isContentEditable),
+      );
+
+      if (isTypingField) return;
+
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -41,10 +66,13 @@ export function PublisherContractsList({ contracts }: PublisherContractsListProp
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Search contracts..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Search contracts"
+              aria-keyshortcuts="/"
               className="pl-9 pr-4 py-2 w-full sm:w-64 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
             />
           </div>

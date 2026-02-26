@@ -10,9 +10,9 @@ pub enum ReorgError {
     #[error("Ledger hash mismatch: stored={0}, current={1}")]
     HashMismatch(String, String),
     #[error("RPC error during reorg check: {0}")]
-    RpcError(String),
+    Rpc(String),
     #[error("State manager error: {0}")]
-    StateError(String),
+    State(String),
 }
 
 /// Reorg detector and recovery handler
@@ -42,7 +42,10 @@ impl ReorgHandler {
             None => {
                 // If we don't have a stored hash but have indexed ledgers,
                 // we should probably assume no reorg for now but warn
-                warn!("No stored ledger hash for height {}, skipping reorg check", state.last_indexed_ledger_height);
+                warn!(
+                    "No stored ledger hash for height {}, skipping reorg check",
+                    state.last_indexed_ledger_height
+                );
                 return Ok(false);
             }
         };
@@ -51,7 +54,12 @@ impl ReorgHandler {
         let ledger = rpc_client
             .get_ledger(state.last_indexed_ledger_height)
             .await
-            .map_err(|e| ReorgError::RpcError(format!("Failed to fetch ledger {}: {}", state.last_indexed_ledger_height, e)))?;
+            .map_err(|e| {
+                ReorgError::Rpc(format!(
+                    "Failed to fetch ledger {}: {}",
+                    state.last_indexed_ledger_height, e
+                ))
+            })?;
 
         if &ledger.hash != stored_hash {
             warn!(
@@ -83,7 +91,7 @@ impl ReorgHandler {
         state_manager
             .update_state(state)
             .await
-            .map_err(|e| ReorgError::StateError(e.to_string()))?;
+            .map_err(|e| ReorgError::State(e.to_string()))?;
 
         info!(
             "Recovered from reorg: resumed from ledger height {}",
@@ -129,6 +137,7 @@ mod tests {
         let mut state = IndexerState {
             network: shared::Network::Testnet,
             last_indexed_ledger_height: 500,
+            last_indexed_ledger_hash: None,
             last_checkpoint_ledger_height: 400,
             consecutive_failures: 2,
         };

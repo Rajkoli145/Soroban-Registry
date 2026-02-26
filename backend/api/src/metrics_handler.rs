@@ -5,6 +5,14 @@ use axum::response::IntoResponse;
 use crate::metrics;
 use crate::state::AppState;
 
+#[utoipa::path(
+    get,
+    path = "/api/metrics",
+    responses(
+        (status = 200, description = "Prometheus metrics", body = String)
+    ),
+    tag = "Observability"
+)]
 pub async fn metrics_endpoint(State(state): State<AppState>) -> impl IntoResponse {
     let body = metrics::gather_metrics(&state.registry);
     (
@@ -36,6 +44,7 @@ mod tests {
             cache: Arc::new(CacheLayer::new(CacheConfig::default())),
             registry,
             is_shutting_down: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            health_monitor_status: crate::health_monitor::HealthMonitorStatus::default(),
         }
     }
 

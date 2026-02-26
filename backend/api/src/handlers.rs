@@ -12,13 +12,13 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde_json::{json, Value};
 use shared::{
-    pagination::Cursor, AnalyticsEventType, ChangePublisherRequest, Contract,
-    ContractAnalyticsResponse, ContractGetResponse, ContractInteractionResponse,
-    ContractSearchParams, ContractVersion, CreateContractVersionRequest,
-    CreateInteractionBatchRequest, CreateInteractionRequest, DeploymentStats,
-    InteractionTimeSeriesPoint, InteractionTimeSeriesResponse, InteractionsListResponse,
-    InteractionsQueryParams, InteractorStats, Network, NetworkConfig, PaginatedResponse,
-    PublishRequest, Publisher, SemVer, TimelineEntry, TopUser, TrendingParams,
+    pagination::Cursor, AnalyticsEventType, AuditActionType, ChangePublisherRequest, Contract,
+    ContractAnalyticsResponse, ContractAuditLog, ContractChangelogEntry, ContractChangelogResponse,
+    ContractGetResponse, ContractInteractionResponse, ContractSearchParams, ContractVersion,
+    CreateContractVersionRequest, CreateInteractionBatchRequest, CreateInteractionRequest,
+    DeploymentStats, InteractionTimeSeriesPoint, InteractionTimeSeriesResponse,
+    InteractionsListResponse, InteractionsQueryParams, InteractorStats, Network, NetworkConfig,
+    PaginatedResponse, PublishRequest, Publisher, SemVer, TimelineEntry, TopUser, TrendingParams,
     UpdateContractMetadataRequest, UpdateContractStatusRequest, VerifyRequest,
 };
 use std::time::Duration;
@@ -80,7 +80,7 @@ pub struct ContractAuditLogEntry {
     pub ip_address: String,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
 pub struct AuditLogQuery {
     #[serde(default = "default_audit_limit")]
     pub limit: i64,
@@ -90,6 +90,18 @@ pub struct AuditLogQuery {
 
 fn default_audit_limit() -> i64 {
     100
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct PublisherContractsQuery {
+    #[serde(default = "default_contracts_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub offset: i64,
+}
+
+fn default_contracts_limit() -> i64 {
+    20
 }
 
 fn extract_ip_address(headers: &HeaderMap) -> String {
@@ -121,29 +133,103 @@ fn extract_ip_address(headers: &HeaderMap) -> String {
 
 async fn write_contract_audit_log(
     db: &sqlx::PgPool,
-    event_type: ContractAuditEventType,
+    action_type: AuditActionType,
     contract_id: Uuid,
     user_id: Uuid,
     changes: serde_json::Value,
     ip_address: &str,
 ) -> Result<(), sqlx::Error> {
+    let (old_value, new_value) = split_audit_changes(&changes, ip_address);
+
     sqlx::query(
-        "INSERT INTO audit_logs (event_type, contract_id, user_id, changes, ip_address)
+        "INSERT INTO contract_audit_log (action_type, contract_id, old_value, new_value, changed_by)
          VALUES ($1, $2, $3, $4, $5)",
     )
-    .bind(event_type)
+    .bind(action_type)
     .bind(contract_id)
-    .bind(user_id)
-    .bind(changes)
-    .bind(ip_address)
+    .bind(old_value)
+    .bind(new_value)
+    .bind(user_id.to_string())
     .execute(db)
     .await?;
 
-    let _ = sqlx::query_scalar::<_, i64>("SELECT archive_old_audit_logs()")
-        .fetch_one(db)
-        .await?;
-
     Ok(())
+}
+
+openapi-doc
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Service is healthy", body = Object),
+        (status = 503, description = "Service is unavailable or degraded", body = Object)
+    ),
+    tag = "Observability"
+)]
+fn split_audit_changes(
+    changes: &serde_json::Value,
+    ip_address: &str,
+) -> (Option<serde_json::Value>, Option<serde_json::Value>) {
+    let mut old_value = serde_json::Map::new();
+    let mut new_value = serde_json::Map::new();
+    let mut saw_before_after_pair = false;
+
+    match changes {
+        serde_json::Value::Object(fields) => {
+            for (field, delta) in fields {
+                match delta {
+                    serde_json::Value::Object(delta_obj) => {
+                        let before = delta_obj.get("before");
+                        let after = delta_obj.get("after");
+
+                        if before.is_some() || after.is_some() {
+                            saw_before_after_pair = true;
+                            if let Some(before) = before {
+                                if !before.is_null() {
+                                    old_value.insert(field.clone(), before.clone());
+                                }
+                            }
+                            if let Some(after) = after {
+                                if !after.is_null() {
+                                    new_value.insert(field.clone(), after.clone());
+                                }
+                            }
+                        } else {
+                            new_value.insert(field.clone(), delta.clone());
+                        }
+                    }
+                    _ => {
+                        new_value.insert(field.clone(), delta.clone());
+                    }
+                }
+            }
+        }
+        _ => {
+            new_value.insert("changes".to_string(), changes.clone());
+        }
+    }
+
+    if !saw_before_after_pair && new_value.is_empty() {
+        new_value.insert("changes".to_string(), changes.clone());
+    }
+
+    new_value.insert(
+        "_ip_address".to_string(),
+        serde_json::Value::String(ip_address.to_string()),
+    );
+
+    let old_value = if old_value.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(old_value))
+    };
+    let new_value = if new_value.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(new_value))
+    };
+
+    (old_value, new_value)
 }
 
 fn parse_interaction_type(
@@ -185,15 +271,7 @@ fn parse_interaction_type(
 
 async fn record_contract_interaction(
     db: &sqlx::PgPool,
-    contract_id: Uuid,
-    account: Option<&str>,
-    interaction_type: &str,
-    transaction_hash: Option<&str>,
-    method: Option<&str>,
-    parameters: Option<&serde_json::Value>,
-    return_value: Option<&serde_json::Value>,
-    timestamp: chrono::DateTime<chrono::Utc>,
-    network: &Network,
+    input: ContractInteractionInsert<'_>,
 ) -> Result<Uuid, sqlx::Error> {
     let mut tx = db.begin().await?;
 
@@ -208,16 +286,16 @@ async fn record_contract_interaction(
         RETURNING id
         "#,
     )
-    .bind(contract_id)
-    .bind(account)
-    .bind(interaction_type)
-    .bind(transaction_hash)
-    .bind(method)
-    .bind(parameters)
-    .bind(return_value)
-    .bind(timestamp)
-    .bind(network)
-    .bind(timestamp)
+    .bind(input.contract_id)
+    .bind(input.account)
+    .bind(input.interaction_type)
+    .bind(input.transaction_hash)
+    .bind(input.method)
+    .bind(input.parameters)
+    .bind(input.return_value)
+    .bind(input.timestamp)
+    .bind(input.network)
+    .bind(input.timestamp)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -232,16 +310,29 @@ async fn record_contract_interaction(
           updated_at = NOW()
         "#,
     )
-    .bind(contract_id)
-    .bind(interaction_type)
-    .bind(network)
-    .bind(timestamp.date_naive())
+    .bind(input.contract_id)
+    .bind(input.interaction_type)
+    .bind(input.network)
+    .bind(input.timestamp.date_naive())
     .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
 
     Ok(interaction_id)
+}
+
+main
+struct ContractInteractionInsert<'a> {
+    contract_id: Uuid,
+    account: Option<&'a str>,
+    interaction_type: &'a str,
+    transaction_hash: Option<&'a str>,
+    method: Option<&'a str>,
+    parameters: Option<&'a serde_json::Value>,
+    return_value: Option<&'a serde_json::Value>,
+    timestamp: chrono::DateTime<chrono::Utc>,
+    network: &'a Network,
 }
 
 pub async fn health_check(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
@@ -297,6 +388,14 @@ pub async fn health_check(State(state): State<AppState>) -> (StatusCode, Json<Va
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/stats",
+    responses(
+        (status = 200, description = "Global registry statistics", body = Object)
+    ),
+    tag = "Observability"
+)]
 pub async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let total_contracts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contracts")
         .fetch_one(&state.db)
@@ -322,6 +421,16 @@ pub async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<Value>> 
 }
 
 /// List and search contracts
+#[utoipa::path(
+    get,
+    path = "/api/contracts",
+    params(ContractSearchParams),
+    responses(
+        (status = 200, description = "List of contracts", body = PaginatedResponse<Contract>),
+        (status = 400, description = "Invalid query parameters")
+    ),
+    tag = "Contracts"
+)]
 pub async fn list_contracts(
     State(state): State<AppState>,
     params: Result<Query<ContractSearchParams>, QueryRejection>,
@@ -438,8 +547,8 @@ pub async fn list_contracts(
         shared::SortBy::Relevance => {
             if let Some(ref q) = params.query {
                 format!(
-                    "CASE WHEN c.name ILIKE '{}' THEN 0 
-                          WHEN c.name ILIKE '%{}%' THEN 1 
+                    "CASE WHEN c.name ILIKE '{}' THEN 0
+                          WHEN c.name ILIKE '%{}%' THEN 1
                           ELSE 2 END",
                     q, q
                 )
@@ -493,6 +602,20 @@ pub async fn list_contracts(
 }
 
 /// Get a specific contract by ID. Optional ?network= returns network-specific config (Issue #43).
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}",
+    params(
+        ("id" = String, Path, description = "Contract UUID"),
+        GetContractQuery
+    ),
+    responses(
+        (status = 200, description = "Contract details", body = ContractGetResponse),
+        (status = 404, description = "Contract not found"),
+        (status = 400, description = "Invalid contract ID format")
+    ),
+    tag = "Contracts"
+)]
 pub async fn get_contract(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -542,6 +665,19 @@ pub async fn get_contract(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/versions",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    responses(
+        (status = 200, description = "List of contract versions", body = [ContractVersion]),
+        (status = 404, description = "Contract not found"),
+        (status = 400, description = "Invalid contract ID format")
+    ),
+    tag = "Versions"
+)]
 pub async fn get_contract_versions(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -564,6 +700,21 @@ pub async fn get_contract_versions(
     Ok(Json(versions))
 }
 
+openapi-doc
+#[utoipa::path(
+    post,
+    path = "/api/contracts/{id}/versions",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    request_body = CreateContractVersionRequest,
+    responses(
+        (status = 201, description = "Version created successfully", body = ContractVersion),
+        (status = 400, description = "Invalid input or version conflict"),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Versions"
+)]
 /// GET /api/contracts/:id/changelog (and /contracts/:id/changelog) — release history with breaking-change markers.
 pub async fn get_contract_changelog(
     State(state): State<AppState>,
@@ -634,6 +785,7 @@ pub async fn get_contract_changelog(
     }))
 }
 
+main
 pub async fn create_contract_version(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -913,6 +1065,60 @@ async fn fetch_contract_identity(state: &AppState, id: &str) -> ApiResult<(Uuid,
     })
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/contracts",
+    request_body = PublishRequest,
+    responses(
+        (status = 201, description = "Contract published successfully", body = Contract),
+        (status = 400, description = "Invalid input or contract ID"),
+        (status = 409, description = "Contract already registered")
+    ),
+    tag = "Contracts"
+)]
+async fn ensure_contract_exists(
+    state: &AppState,
+    contract_uuid: Uuid,
+    contract_id_raw: &str,
+    operation: &str,
+) -> ApiResult<()> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM contracts WHERE id = $1)")
+        .bind(contract_uuid)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|err| db_internal_error(operation, err))?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(ApiError::not_found(
+            "ContractNotFound",
+            format!("No contract found with ID: {}", contract_id_raw),
+        ))
+    }
+}
+
+async fn fetch_contract_network(
+    state: &AppState,
+    contract_uuid: Uuid,
+    contract_id_raw: &str,
+    operation: &str,
+) -> ApiResult<Network> {
+    let network: Option<Network> =
+        sqlx::query_scalar("SELECT network FROM contracts WHERE id = $1")
+            .bind(contract_uuid)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|err| db_internal_error(operation, err))?;
+
+    network.ok_or_else(|| {
+        ApiError::not_found(
+            "ContractNotFound",
+            format!("No contract found with ID: {}", contract_id_raw),
+        )
+    })
+}
+
 pub async fn publish_contract(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -931,7 +1137,7 @@ pub async fn publish_contract(
     .await
     .map_err(|err| db_internal_error("upsert publisher", err))?;
 
-    let wasm_hash = "placeholder_hash".to_string();
+    let wasm_hash = req.wasm_hash.clone();
     let network_key = req.network.to_string();
     let mut config_map = serde_json::Map::new();
     config_map.insert(
@@ -1021,7 +1227,7 @@ pub async fn publish_contract(
 
     write_contract_audit_log(
         &state.db,
-        ContractAuditEventType::ContractCreated,
+        AuditActionType::ContractPublished,
         contract.id,
         publisher.id,
         creation_changes,
@@ -1032,15 +1238,17 @@ pub async fn publish_contract(
 
     record_contract_interaction(
         &state.db,
-        contract.id,
-        Some(&publisher.stellar_address),
-        "publish_success",
-        None,
-        None,
-        None,
-        None,
-        chrono::Utc::now(),
-        &contract.network,
+        ContractInteractionInsert {
+            contract_id: contract.id,
+            account: Some(&publisher.stellar_address),
+            interaction_type: "publish_success",
+            transaction_hash: None,
+            method: None,
+            parameters: None,
+            return_value: None,
+            timestamp: chrono::Utc::now(),
+            network: &contract.network,
+        },
     )
     .await
     .map_err(|err| db_internal_error("record publish_success interaction", err))?;
@@ -1059,6 +1267,16 @@ pub async fn publish_contract(
     Ok(Json(contract))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/publishers",
+    request_body = Publisher,
+    responses(
+        (status = 201, description = "Publisher created successfully", body = Publisher),
+        (status = 400, description = "Invalid input")
+    ),
+    tag = "Publishers"
+)]
 pub async fn create_publisher(
     State(state): State<AppState>,
     ValidatedJson(publisher): ValidatedJson<Publisher>,
@@ -1091,6 +1309,18 @@ pub async fn create_publisher(
     Ok(Json(created))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/publishers/{id}",
+    params(
+        ("id" = String, Path, description = "Publisher UUID")
+    ),
+    responses(
+        (status = 200, description = "Publisher details", body = Publisher),
+        (status = 404, description = "Publisher not found")
+    ),
+    tag = "Publishers"
+)]
 pub async fn get_publisher(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1117,10 +1347,23 @@ pub async fn get_publisher(
     Ok(Json(publisher))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/publishers/{id}/contracts",
+    params(
+        ("id" = String, Path, description = "Publisher UUID")
+    ),
+    responses(
+        (status = 200, description = "List of contracts by publisher", body = [Contract]),
+        (status = 404, description = "Publisher not found")
+    ),
+    tag = "Publishers"
+)]
 pub async fn get_publisher_contracts(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> ApiResult<Json<Vec<Contract>>> {
+    Query(query): Query<PublisherContractsQuery>,
+) -> ApiResult<Json<PaginatedResponse<Contract>>> {
     let publisher_uuid = Uuid::parse_str(&id).map_err(|_| {
         ApiError::bad_request(
             "InvalidPublisherId",
@@ -1128,18 +1371,36 @@ pub async fn get_publisher_contracts(
         )
     })?;
 
-    let contracts: Vec<Contract> =
-        sqlx::query_as("SELECT * FROM contracts WHERE publisher_id = $1 ORDER BY created_at DESC")
-            .bind(publisher_uuid)
-            .fetch_all(&state.db)
-            .await
-            .map_err(|err| db_internal_error("get publisher contracts", err))?;
+    // Validate and cap limit (max 100)
+    let limit = query.limit.max(1).min(100);
+    let offset = query.offset.max(0);
 
-    Ok(Json(contracts))
+    // Get total count
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contracts WHERE publisher_id = $1")
+        .bind(publisher_uuid)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|err| db_internal_error("get publisher contracts count", err))?;
+
+    // Fetch paginated results
+    let contracts: Vec<Contract> = sqlx::query_as(
+        "SELECT * FROM contracts WHERE publisher_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+    )
+    .bind(publisher_uuid)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| db_internal_error("get publisher contracts", err))?;
+
+    let page = (offset / limit) + 1;
+    let response = PaginatedResponse::new(contracts, total, page, limit);
+
+    Ok(Json(response))
 }
 
 /// Query for contract ABI and OpenAPI (optional version)
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
 pub struct ContractAbiQuery {
     pub version: Option<String>,
 }
@@ -1158,6 +1419,19 @@ async fn resolve_contract_abi(
 }
 
 // Contract ABI and OpenAPI endpoints
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/abi",
+    params(
+        ("id" = String, Path, description = "Contract identifier (address or name)"),
+        ContractAbiQuery
+    ),
+    responses(
+        (status = 200, description = "Contract ABI", body = Object),
+        (status = 404, description = "Contract or version not found")
+    ),
+    tag = "Artifacts"
+)]
 pub async fn get_contract_abi(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1169,6 +1443,19 @@ pub async fn get_contract_abi(
     Ok(Json(json!({ "abi": abi })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/openapi.yaml",
+    params(
+        ("id" = String, Path, description = "Contract identifier"),
+        ContractAbiQuery
+    ),
+    responses(
+        (status = 200, description = "OpenAPI YAML specification", body = String),
+        (status = 404, description = "Contract or version not found")
+    ),
+    tag = "Artifacts"
+)]
 pub async fn get_contract_openapi_yaml(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1186,6 +1473,19 @@ pub async fn get_contract_openapi_yaml(
         .map_err(|_| ApiError::internal("Failed to build response"))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/openapi.json",
+    params(
+        ("id" = String, Path, description = "Contract identifier"),
+        ContractAbiQuery
+    ),
+    responses(
+        (status = 200, description = "OpenAPI JSON specification", body = Object),
+        (status = 404, description = "Contract or version not found")
+    ),
+    tag = "Artifacts"
+)]
 pub async fn get_contract_openapi_json(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1204,15 +1504,37 @@ pub async fn get_contract_openapi_json(
 }
 
 // Stubs for upstream added endpoints
+fn planned_not_implemented_response() -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "error": "not_implemented",
+            "message": "This endpoint is planned but not yet functional"
+        })),
+    )
+}
+
 pub async fn get_contract_state() -> impl IntoResponse {
-    Json(json!({"state": {}}))
+    planned_not_implemented_response()
 }
 
 pub async fn update_contract_state() -> impl IntoResponse {
-    Json(json!({"success": true}))
+    planned_not_implemented_response()
 }
 
 /// GET /api/contracts/:id/analytics — timeline and top users from contract_interactions (Issue #46).
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/analytics",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    responses(
+        (status = 200, description = "Contract analytics and usage data", body = ContractAnalyticsResponse),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Analytics"
+)]
 pub async fn get_contract_analytics(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1224,17 +1546,7 @@ pub async fn get_contract_analytics(
         )
     })?;
 
-    let _contract: Contract = sqlx::query_as("SELECT * FROM contracts WHERE id = $1")
-        .bind(contract_uuid)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|err| match err {
-            sqlx::Error::RowNotFound => ApiError::not_found(
-                "ContractNotFound",
-                format!("No contract found with ID: {}", id),
-            ),
-            _ => db_internal_error("get contract for analytics", err),
-        })?;
+    ensure_contract_exists(&state, contract_uuid, &id, "get contract for analytics").await?;
 
     let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
 
@@ -1306,9 +1618,21 @@ pub async fn get_contract_analytics(
 }
 
 pub async fn get_trust_score() -> impl IntoResponse {
-    Json(json!({"score": 0}))
+    planned_not_implemented_response()
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/dependencies",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    responses(
+        (status = 200, description = "List of direct dependencies", body = Object),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Graphs"
+)]
 pub async fn get_contract_dependencies(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1326,6 +1650,18 @@ pub async fn get_contract_dependencies(
     Ok(Json(json!({ "dependencies": deps })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/dependents",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    responses(
+        (status = 200, description = "List of direct dependents", body = Object),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Graphs"
+)]
 pub async fn get_contract_dependents(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1343,6 +1679,14 @@ pub async fn get_contract_dependents(
     Ok(Json(json!({ "dependents": dependents })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/graph",
+    responses(
+        (status = 200, description = "Full contract dependency graph", body = GraphResponse)
+    ),
+    tag = "Graphs"
+)]
 pub async fn get_contract_graph(
     State(state): State<AppState>,
 ) -> ApiResult<Json<shared::GraphResponse>> {
@@ -1374,11 +1718,23 @@ pub async fn get_contract_graph(
     Ok(Json(graph))
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
 pub struct ImpactQuery {
     pub change: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/impact",
+    params(
+        ("id" = String, Path, description = "Contract UUID"),
+        ImpactQuery
+    ),
+    responses(
+        (status = 200, description = "Impact analysis for proposed changes", body = Object)
+    ),
+    tag = "Graphs"
+)]
 pub async fn get_impact_analysis(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1414,6 +1770,17 @@ pub async fn get_impact_analysis(
     }))
 }
 
+openapi-doc
+#[utoipa::path(
+    get,
+    path = "/api/contracts/trending",
+    responses(
+        (status = 200, description = "List of trending contracts", body = Object)
+    ),
+    tag = "Contracts"
+)]
+pub async fn get_trending_contracts() -> impl IntoResponse {
+    Json(json!({"trending": []}))
 pub async fn get_trending_contracts(
     State(state): State<AppState>,
     Query(params): Query<TrendingParams>,
@@ -1516,8 +1883,20 @@ pub async fn get_trending_contracts(
         "limit": limit,
         "trending": trending
     })))
+main
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/contracts/verify",
+    request_body = VerifyRequest,
+    responses(
+        (status = 200, description = "Verification successful", body = Object),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Verification"
+)]
 pub async fn verify_contract(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1600,7 +1979,7 @@ pub async fn verify_contract(
 
             write_contract_audit_log(
                 &state.db,
-                ContractAuditEventType::VerificationAdded,
+                AuditActionType::VerificationChanged,
                 contract.id,
                 contract.publisher_id,
                 verification_changes,
@@ -1616,7 +1995,7 @@ pub async fn verify_contract(
                 });
                 write_contract_audit_log(
                     &state.db,
-                    ContractAuditEventType::StatusChanged,
+                    AuditActionType::VerificationChanged,
                     contract.id,
                     contract.publisher_id,
                     status_changes,
@@ -1626,31 +2005,33 @@ pub async fn verify_contract(
                 .map_err(|err| db_internal_error("write status_changed audit log", err))?;
             }
 
-    record_contract_interaction(
-        &state.db,
-        contract.id,
-        None,
-        "publish_success",
-        None,
-        Some("verify"),
-        None,
-        None,
-        chrono::Utc::now(),
-        &contract.network,
-    )
-    .await
-    .map_err(|err| db_internal_error("record verification interaction", err))?;
+            record_contract_interaction(
+                &state.db,
+                ContractInteractionInsert {
+                    contract_id: contract.id,
+                    account: None,
+                    interaction_type: "publish_success",
+                    transaction_hash: None,
+                    method: Some("verify"),
+                    parameters: None,
+                    return_value: None,
+                    timestamp: chrono::Utc::now(),
+                    network: &contract.network,
+                },
+            )
+            .await
+            .map_err(|err| db_internal_error("record verification interaction", err))?;
 
-    let _ = analytics::record_event(
-        &state.db,
-        AnalyticsEventType::ContractVerified,
-        Some(contract.id),
-        Some(contract.publisher_id),
-        None,
-        Some(&contract.network),
-        Some(json!({ "verification_id": verification_id })),
-    )
-    .await;
+            let _ = analytics::record_event(
+                &state.db,
+                AnalyticsEventType::ContractVerified,
+                Some(contract.id),
+                Some(contract.publisher_id),
+                None,
+                Some(&contract.network),
+                Some(json!({ "verification_id": verification_id })),
+            )
+            .await;
             let _ = analytics::record_event(
                 &state.db,
                 AnalyticsEventType::ContractVerified,
@@ -1697,7 +2078,7 @@ pub async fn verify_contract(
             });
             write_contract_audit_log(
                 &state.db,
-                ContractAuditEventType::VerificationAdded,
+                AuditActionType::VerificationChanged,
                 contract.id,
                 contract.publisher_id,
                 verification_changes,
@@ -1713,7 +2094,7 @@ pub async fn verify_contract(
                 });
                 write_contract_audit_log(
                     &state.db,
-                    ContractAuditEventType::StatusChanged,
+                    AuditActionType::VerificationChanged,
                     contract.id,
                     contract.publisher_id,
                     status_changes,
@@ -1750,7 +2131,7 @@ pub async fn verify_contract(
             });
             write_contract_audit_log(
                 &state.db,
-                ContractAuditEventType::VerificationAdded,
+                AuditActionType::VerificationChanged,
                 contract.id,
                 contract.publisher_id,
                 verification_changes,
@@ -1766,7 +2147,7 @@ pub async fn verify_contract(
                 });
                 write_contract_audit_log(
                     &state.db,
-                    ContractAuditEventType::StatusChanged,
+                    AuditActionType::VerificationChanged,
                     contract.id,
                     contract.publisher_id,
                     status_changes,
@@ -1786,6 +2167,20 @@ pub async fn verify_contract(
     }
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/contracts/{id}/metadata",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    request_body = UpdateContractMetadataRequest,
+    responses(
+        (status = 200, description = "Metadata updated successfully", body = Contract),
+        (status = 404, description = "Contract not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    tag = "Contracts"
+)]
 pub async fn update_contract_metadata(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1870,7 +2265,7 @@ pub async fn update_contract_metadata(
     if !changes.is_empty() {
         write_contract_audit_log(
             &state.db,
-            ContractAuditEventType::MetadataUpdated,
+            AuditActionType::MetadataUpdated,
             after.id,
             req.user_id.unwrap_or(before.publisher_id),
             Value::Object(changes.clone()),
@@ -1894,6 +2289,19 @@ pub async fn update_contract_metadata(
     Ok(Json(after))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/contracts/{id}/publisher",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    request_body = ChangePublisherRequest,
+    responses(
+        (status = 200, description = "Publisher changed successfully", body = Contract),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Contracts"
+)]
 pub async fn change_contract_publisher(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1957,7 +2365,7 @@ pub async fn change_contract_publisher(
         });
         write_contract_audit_log(
             &state.db,
-            ContractAuditEventType::PublisherChanged,
+            AuditActionType::PublisherChanged,
             after.id,
             req.user_id.unwrap_or(before.publisher_id),
             changes,
@@ -1970,6 +2378,20 @@ pub async fn change_contract_publisher(
     Ok(Json(after))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/contracts/{id}/status",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    request_body = UpdateContractStatusRequest,
+    responses(
+        (status = 200, description = "Status updated successfully", body = Object),
+        (status = 404, description = "Contract not found"),
+        (status = 400, description = "Invalid status")
+    ),
+    tag = "Contracts"
+)]
 pub async fn update_contract_status(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -2050,7 +2472,7 @@ pub async fn update_contract_status(
         });
         write_contract_audit_log(
             &state.db,
-            ContractAuditEventType::StatusChanged,
+            AuditActionType::VerificationChanged,
             contract_uuid,
             req.user_id.unwrap_or(contract.publisher_id),
             changes,
@@ -2069,15 +2491,17 @@ pub async fn update_contract_status(
 
         record_contract_interaction(
             &state.db,
-            contract_uuid,
-            None,
-            interaction_type,
-            None,
-            Some("status_update"),
-            None,
-            None,
-            chrono::Utc::now(),
-            &contract.network,
+            ContractInteractionInsert {
+                contract_id: contract_uuid,
+                account: None,
+                interaction_type,
+                transaction_hash: None,
+                method: Some("status_update"),
+                parameters: None,
+                return_value: None,
+                timestamp: chrono::Utc::now(),
+                network: &contract.network,
+            },
         )
         .await
         .map_err(|err| db_internal_error("record status interaction", err))?;
@@ -2091,11 +2515,24 @@ pub async fn update_contract_status(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/audit-log",
+    params(
+        ("id" = String, Path, description = "Contract UUID"),
+        AuditLogQuery
+    ),
+    responses(
+        (status = 200, description = "Paginated audit logs for the contract", body = [ContractAuditLogEntry]),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Administration"
+)]
 pub async fn get_contract_audit_log(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(params): Query<AuditLogQuery>,
-) -> ApiResult<Json<Vec<ContractAuditLogEntry>>> {
+) -> ApiResult<Json<Vec<ContractAuditLog>>> {
     let contract_uuid = Uuid::parse_str(&id).map_err(|_| {
         ApiError::bad_request(
             "InvalidContractId",
@@ -2105,7 +2542,7 @@ pub async fn get_contract_audit_log(
     let limit = params.limit.clamp(1, 500);
     let offset = params.offset.max(0);
 
-    let contract: Contract = sqlx::query_as("SELECT * FROM contracts WHERE id = $1")
+    let _contract: Contract = sqlx::query_as("SELECT * FROM contracts WHERE id = $1")
         .bind(contract_uuid)
         .fetch_one(&state.db)
         .await
@@ -2116,15 +2553,19 @@ pub async fn get_contract_audit_log(
             ),
             _ => db_internal_error("check contract before audit log query", err),
         })?;
+    ensure_contract_exists(
+        &state,
+        contract_uuid,
+        &id,
+        "check contract before audit log query",
+    )
+    .await?;
 
-    let logs: Vec<ContractAuditLogEntry> = sqlx::query_as(
+    let logs: Vec<ContractAuditLog> = sqlx::query_as(
         r#"
-        SELECT id, event_type, contract_id, user_id, "timestamp", changes, ip_address
-          FROM audit_logs
-         WHERE contract_id = $1
-        UNION ALL
-        SELECT id, event_type, contract_id, user_id, "timestamp", changes, ip_address
-          FROM audit_logs_archive
+        SELECT id, contract_id, action_type, old_value, new_value, changed_by, "timestamp",
+               previous_hash, hash, signature
+          FROM contract_audit_log
          WHERE contract_id = $1
          ORDER BY "timestamp" DESC
          LIMIT $2 OFFSET $3
@@ -2140,20 +2581,28 @@ pub async fn get_contract_audit_log(
     Ok(Json(logs))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/audit-logs",
+    params(AuditLogQuery),
+    responses(
+        (status = 200, description = "Global audit logs (Admin only)", body = [ContractAuditLogEntry])
+    ),
+    tag = "Administration",
+    security(("bearerAuth" = []))
+)]
 pub async fn get_all_audit_logs(
     State(state): State<AppState>,
     Query(params): Query<AuditLogQuery>,
-) -> ApiResult<Json<Vec<ContractAuditLogEntry>>> {
+) -> ApiResult<Json<Vec<ContractAuditLog>>> {
     let limit = params.limit.clamp(1, 500);
     let offset = params.offset.max(0);
 
-    let logs: Vec<ContractAuditLogEntry> = sqlx::query_as(
+    let logs: Vec<ContractAuditLog> = sqlx::query_as(
         r#"
-        SELECT id, event_type, contract_id, user_id, "timestamp", changes, ip_address
-          FROM audit_logs
-        UNION ALL
-        SELECT id, event_type, contract_id, user_id, "timestamp", changes, ip_address
-          FROM audit_logs_archive
+        SELECT id, contract_id, action_type, old_value, new_value, changed_by, "timestamp",
+               previous_hash, hash, signature
+          FROM contract_audit_log
          ORDER BY "timestamp" DESC
          LIMIT $1 OFFSET $2
         "#,
@@ -2167,14 +2616,44 @@ pub async fn get_all_audit_logs(
     Ok(Json(logs))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/deployments/status",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    responses(
+        (status = 200, description = "Current deployment status", body = Object)
+    ),
+    tag = "Deployments"
+)]
 pub async fn get_deployment_status() -> impl IntoResponse {
-    Json(json!({"status": "pending"}))
+    planned_not_implemented_response()
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/deployments/green",
+    responses(
+        (status = 202, description = "Green deployment triggered", body = Object)
+    ),
+    tag = "Deployments"
+)]
 pub async fn deploy_green() -> impl IntoResponse {
-    Json(json!({"deployment_id": ""}))
+    planned_not_implemented_response()
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/performance",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    responses(
+        (status = 200, description = "Performance metrics and anomalies", body = Object)
+    ),
+    tag = "Analytics"
+)]
 pub async fn get_contract_performance() -> impl IntoResponse {
     Json(json!({"performance": {}}))
 }
@@ -2182,6 +2661,19 @@ pub async fn get_contract_performance() -> impl IntoResponse {
 // ─── Contract interaction history (Issue #46) ─────────────────────────────────
 
 /// GET /api/contracts/:id/interactions — list with optional filters (account, method, date range).
+#[utoipa::path(
+    get,
+    path = "/api/contracts/{id}/interactions",
+    params(
+        ("id" = String, Path, description = "Contract UUID"),
+        InteractionsQueryParams
+    ),
+    responses(
+        (status = 200, description = "List of contract interactions", body = InteractionsListResponse),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Analytics"
+)]
 pub async fn get_contract_interactions(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -2194,17 +2686,7 @@ pub async fn get_contract_interactions(
         )
     })?;
 
-    let contract: Contract = sqlx::query_as("SELECT * FROM contracts WHERE id = $1")
-        .bind(contract_uuid)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|err| match err {
-            sqlx::Error::RowNotFound => ApiError::not_found(
-                "ContractNotFound",
-                format!("No contract found with ID: {}", id),
-            ),
-            _ => db_internal_error("get contract for interactions", err),
-        })?;
+    ensure_contract_exists(&state, contract_uuid, &id, "get contract for interactions").await?;
 
     if let Some(days) = params.days {
         let days = days.clamp(1, 365);
@@ -2257,18 +2739,20 @@ pub async fn get_contract_interactions(
         .map_err(|err| db_internal_error("fetch weekly interaction trend", err))?;
 
         let response = InteractionTimeSeriesResponse {
-            contract_id: contract.id,
+            contract_id: contract_uuid,
             days,
             interactions_this_week,
             interactions_last_week,
             is_trending: (interactions_this_week as f64) > (interactions_last_week as f64 * 1.5),
             series: series_rows
                 .into_iter()
-                .map(|(date, interaction_type, count)| InteractionTimeSeriesPoint {
-                    date,
-                    interaction_type,
-                    count,
-                })
+                .map(
+                    |(date, interaction_type, count)| InteractionTimeSeriesPoint {
+                        date,
+                        interaction_type,
+                        count,
+                    },
+                )
                 .collect(),
         };
 
@@ -2381,17 +2865,30 @@ pub async fn get_contract_interactions(
         None
     };
 
-    Ok(Json(InteractionsListResponse {
+    Ok(Json(json!(InteractionsListResponse {
         items,
         total,
         limit,
         offset,
         next_cursor,
         prev_cursor,
-    }))
+    })))
 }
 
 /// POST /api/contracts/:id/interactions — ingest one interaction.
+#[utoipa::path(
+    post,
+    path = "/api/contracts/{id}/interactions",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    request_body = CreateInteractionRequest,
+    responses(
+        (status = 201, description = "Interaction logged", body = Object),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Analytics"
+)]
 pub async fn post_contract_interaction(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -2404,33 +2901,26 @@ pub async fn post_contract_interaction(
         )
     })?;
 
-    let contract: Contract = sqlx::query_as("SELECT * FROM contracts WHERE id = $1")
-        .bind(contract_uuid)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|err| match err {
-            sqlx::Error::RowNotFound => ApiError::not_found(
-                "ContractNotFound",
-                format!("No contract found with ID: {}", id),
-            ),
-            _ => db_internal_error("get contract for interaction", err),
-        })?;
+    let contract_network =
+        fetch_contract_network(&state, contract_uuid, &id, "get contract for interaction").await?;
 
     let interaction_type =
         parse_interaction_type(req.interaction_type.as_deref(), req.method.as_deref())?;
     let created_at = req.timestamp.unwrap_or_else(chrono::Utc::now);
-    let network = req.network.unwrap_or_else(|| contract.network.clone());
+    let network = req.network.unwrap_or(contract_network);
     let interaction_id = record_contract_interaction(
         &state.db,
-        contract_uuid,
-        req.account.as_deref(),
-        &interaction_type,
-        req.transaction_hash.as_deref(),
-        req.method.as_deref(),
-        req.parameters.as_ref(),
-        req.return_value.as_ref(),
-        created_at,
-        &network,
+        ContractInteractionInsert {
+            contract_id: contract_uuid,
+            account: req.account.as_deref(),
+            interaction_type: &interaction_type,
+            transaction_hash: req.transaction_hash.as_deref(),
+            method: req.method.as_deref(),
+            parameters: req.parameters.as_ref(),
+            return_value: req.return_value.as_ref(),
+            timestamp: created_at,
+            network: &network,
+        },
     )
     .await
     .map_err(|err| db_internal_error("insert contract interaction", err))?;
@@ -2448,6 +2938,19 @@ pub async fn post_contract_interaction(
 }
 
 /// POST /api/contracts/:id/interactions/batch — ingest multiple interactions.
+#[utoipa::path(
+    post,
+    path = "/api/contracts/{id}/interactions/batch",
+    params(
+        ("id" = String, Path, description = "Contract UUID")
+    ),
+    request_body = CreateInteractionBatchRequest,
+    responses(
+        (status = 201, description = "Batch of interactions logged", body = Object),
+        (status = 404, description = "Contract not found")
+    ),
+    tag = "Analytics"
+)]
 pub async fn post_contract_interactions_batch(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -2460,35 +2963,36 @@ pub async fn post_contract_interactions_batch(
         )
     })?;
 
-    let contract: Contract = sqlx::query_as("SELECT * FROM contracts WHERE id = $1")
-        .bind(contract_uuid)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|err| match err {
-            sqlx::Error::RowNotFound => ApiError::not_found(
-                "ContractNotFound",
-                format!("No contract found with ID: {}", id),
-            ),
-            _ => db_internal_error("get contract for interactions batch", err),
-        })?;
+    let contract_network = fetch_contract_network(
+        &state,
+        contract_uuid,
+        &id,
+        "get contract for interactions batch",
+    )
+    .await?;
 
     let mut ids = Vec::with_capacity(req.interactions.len());
     for i in &req.interactions {
         let interaction_type =
             parse_interaction_type(i.interaction_type.as_deref(), i.method.as_deref())?;
         let created_at = i.timestamp.unwrap_or_else(chrono::Utc::now);
-        let network = i.network.clone().unwrap_or_else(|| contract.network.clone());
+        let network = i
+            .network
+            .clone()
+            .unwrap_or_else(|| contract_network.clone());
         let interaction_id = record_contract_interaction(
             &state.db,
-            contract_uuid,
-            i.account.as_deref(),
-            &interaction_type,
-            i.transaction_hash.as_deref(),
-            i.method.as_deref(),
-            i.parameters.as_ref(),
-            i.return_value.as_ref(),
-            created_at,
-            &network,
+            ContractInteractionInsert {
+                contract_id: contract_uuid,
+                account: i.account.as_deref(),
+                interaction_type: &interaction_type,
+                transaction_hash: i.transaction_hash.as_deref(),
+                method: i.method.as_deref(),
+                parameters: i.parameters.as_ref(),
+                return_value: i.return_value.as_ref(),
+                timestamp: created_at,
+                network: &network,
+            },
         )
         .await
         .map_err(|err| db_internal_error("insert contract interaction batch", err))?;
@@ -2535,5 +3039,42 @@ mod tests {
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         let value = json.0;
         assert_eq!(value["status"], "shutting_down");
+    }
+
+    #[test]
+    fn split_audit_changes_extracts_before_after() {
+        let changes = json!({
+            "name": { "before": "old-name", "after": "new-name" },
+            "description": { "before": "old-desc", "after": "new-desc" },
+            "is_verified": { "before": false, "after": true }
+        });
+
+        let (old_value, new_value) = split_audit_changes(&changes, "127.0.0.1");
+
+        let old = old_value.expect("old_value should be populated");
+        let new = new_value.expect("new_value should be populated");
+        assert_eq!(old["name"], "old-name");
+        assert_eq!(old["description"], "old-desc");
+        assert_eq!(old["is_verified"], false);
+        assert_eq!(new["name"], "new-name");
+        assert_eq!(new["description"], "new-desc");
+        assert_eq!(new["is_verified"], true);
+        assert_eq!(new["_ip_address"], "127.0.0.1");
+    }
+
+    #[test]
+    fn split_audit_changes_preserves_non_diff_payload() {
+        let changes = json!({
+            "status": "verified",
+            "verification_id": "abc123"
+        });
+
+        let (old_value, new_value) = split_audit_changes(&changes, "unknown");
+
+        assert!(old_value.is_none());
+        let new = new_value.expect("new_value should be populated");
+        assert_eq!(new["status"], "verified");
+        assert_eq!(new["verification_id"], "abc123");
+        assert_eq!(new["_ip_address"], "unknown");
     }
 }

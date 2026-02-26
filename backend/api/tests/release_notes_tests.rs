@@ -30,7 +30,7 @@ struct DiffSummary {
     breaking_count: i32,
 }
 
-//HELPERS 
+//HELPERS
 fn extract_functions_from_abi(abi: &serde_json::Value) -> HashMap<String, String> {
     let mut fns = HashMap::new();
 
@@ -51,14 +51,14 @@ fn extract_functions_from_abi(abi: &serde_json::Value) -> HashMap<String, String
                 .and_then(|i| i.as_array())
                 .map(|arr| {
                     arr.iter()
-                        .filter_map(|inp| {
+                        .map(|inp| {
                             let param_name =
                                 inp.get("name").and_then(|n| n.as_str()).unwrap_or("_");
                             let param_type = inp
                                 .get("type")
                                 .map(|t| format!("{}", t))
                                 .unwrap_or_else(|| "unknown".to_string());
-                            Some(format!("{}: {}", param_name, param_type))
+                            format!("{}: {}", param_name, param_type)
                         })
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -70,12 +70,10 @@ fn extract_functions_from_abi(abi: &serde_json::Value) -> HashMap<String, String
                 .and_then(|o| o.as_array())
                 .map(|arr| {
                     arr.iter()
-                        .filter_map(|out| {
-                            Some(
-                                out.get("type")
-                                    .map(|t| format!("{}", t))
-                                    .unwrap_or_else(|| "unknown".to_string()),
-                            )
+                        .map(|out| {
+                            out.get("type")
+                                .map(|t| format!("{}", t))
+                                .unwrap_or_else(|| "unknown".to_string())
                         })
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -116,27 +114,18 @@ fn extract_changelog_section(changelog: &str, version: &str) -> String {
     };
 
     let mut end = lines.len();
-    for i in (start + 1)..lines.len() {
-        let trimmed = lines[i].trim();
+    for (i, line) in lines.iter().enumerate().skip(start + 1) {
+        let trimmed = line.trim();
         if trimmed.starts_with("## ") {
             end = i;
             break;
         }
     }
 
-    lines[start..end]
-        .iter()
-        .copied()
-        .collect::<Vec<&str>>()
-        .join("\n")
-        .trim()
-        .to_string()
+    lines[start..end].to_vec().join("\n").trim().to_string()
 }
 
-fn build_diff_from_abis(
-    old_abi: &serde_json::Value,
-    new_abi: &serde_json::Value,
-) -> DiffSummary {
+fn build_diff_from_abis(old_abi: &serde_json::Value, new_abi: &serde_json::Value) -> DiffSummary {
     let old_fns = extract_functions_from_abi(old_abi);
     let new_fns = extract_functions_from_abi(new_abi);
     let mut diff = DiffSummary::default();
@@ -184,7 +173,11 @@ fn build_diff_from_abis(
         }
     }
 
-    diff.files_changed = if diff.function_changes.is_empty() { 0 } else { 1 };
+    diff.files_changed = if diff.function_changes.is_empty() {
+        0
+    } else {
+        1
+    };
     diff.lines_added = diff
         .function_changes
         .iter()
@@ -306,6 +299,8 @@ fn test_diff_detects_added_functions() {
         .collect();
     assert_eq!(added.len(), 1);
     assert_eq!(added[0].name, "approve");
+    assert!(added[0].old_signature.is_none());
+    assert!(added[0].new_signature.is_some());
 }
 
 #[test]
@@ -330,6 +325,8 @@ fn test_diff_detects_removed_functions() {
     assert_eq!(removed.len(), 1);
     assert_eq!(removed[0].name, "old_fn");
     assert!(removed[0].is_breaking);
+    assert!(removed[0].old_signature.is_some());
+    assert!(removed[0].new_signature.is_none());
 }
 
 #[test]
@@ -352,6 +349,8 @@ fn test_diff_detects_signature_changes() {
     assert_eq!(modified.len(), 1);
     assert_eq!(modified[0].name, "transfer");
     assert!(modified[0].is_breaking);
+    assert!(modified[0].old_signature.is_some());
+    assert!(modified[0].new_signature.is_some());
 }
 
 #[test]
@@ -364,6 +363,7 @@ fn test_diff_no_changes() {
     assert!(diff.function_changes.is_empty());
     assert!(!diff.has_breaking_changes);
     assert_eq!(diff.files_changed, 0);
+    assert_eq!(diff.fixes_count, 0);
 }
 
 #[test]
@@ -469,7 +469,7 @@ fn test_release_notes_status_workflow() {
 
     // User edits...
     // (no-op in unit test, just assert state)
-    
+
     // Publish
     status = "published";
     assert_eq!(status, "published");
@@ -481,7 +481,7 @@ fn test_release_notes_status_workflow() {
 
 #[test]
 fn test_semver_ordering_for_previous_version() {
-    let mut versions = vec![
+    let mut versions = [
         (1u64, 0u64, 0u64),
         (2, 1, 0),
         (1, 5, 3),
@@ -493,12 +493,12 @@ fn test_semver_ordering_for_previous_version() {
 
     // Looking for previous version before 2.0.0
     let target = (2u64, 0u64, 0u64);
-    let previous = versions.iter().filter(|v| **v < target).last();
+    let previous = versions.iter().rfind(|v| **v < target);
     assert_eq!(previous, Some(&(1, 5, 3)));
 
     // Looking for previous version before 1.5.0
     let target = (1u64, 5u64, 0u64);
-    let previous = versions.iter().filter(|v| **v < target).last();
+    let previous = versions.iter().rfind(|v| **v < target);
     assert_eq!(previous, Some(&(1, 0, 0)));
 }
 

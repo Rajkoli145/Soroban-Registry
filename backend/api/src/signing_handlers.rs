@@ -87,37 +87,15 @@ pub async fn sign_package(
     .await
     .map_err(|err| db_internal_error("create package signature", err))?;
 
-    let entry_hash = compute_transparency_hash(
-        &TransparencyEntryType::PackageSigned,
+    append_transparency_log_entry(
+        &state,
+        TransparencyEntryType::PackageSigned,
         Some(contract_uuid),
         Some(signature.id),
         &req.signing_address,
-    );
-
-    let _prev_hash: Option<String> = sqlx::query_scalar(
-        "SELECT entry_hash FROM transparency_log ORDER BY timestamp DESC LIMIT 1",
+        serde_json::to_value(&req).ok(),
     )
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|err| db_internal_error("fetch previous hash", err))?;
-
-    sqlx::query(
-        r#"
-        INSERT INTO transparency_log 
-            (entry_type, contract_id, signature_id, actor_address, previous_hash, entry_hash, payload)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#,
-    )
-    .bind(TransparencyEntryType::PackageSigned.to_string())
-    .bind(contract_uuid)
-    .bind(signature.id)
-    .bind(&req.signing_address)
-    .bind(&_prev_hash)
-    .bind(&entry_hash)
-    .bind(serde_json::to_value(&req).ok())
-    .execute(&state.db)
-    .await
-    .map_err(|err| db_internal_error("create transparency log entry", err))?;
+    .await?;
 
     tracing::info!(
         signature_id = %signature.id,
@@ -212,24 +190,14 @@ async fn verify_signature_locally(
             let valid = crypto_valid && status_valid;
 
             if valid {
-                let _ = sqlx::query(
-                    r#"
-                    INSERT INTO transparency_log 
-                        (entry_type, contract_id, signature_id, actor_address, entry_hash)
-                    VALUES ($1, $2, $3, $4, $5)
-                    "#,
-                )
-                .bind(TransparencyEntryType::SignatureVerified.to_string())
-                .bind(contract_uuid)
-                .bind(db_sig.id)
-                .bind(&db_sig.signing_address)
-                .bind(compute_transparency_hash(
-                    &TransparencyEntryType::SignatureVerified,
+                let _ = append_transparency_log_entry(
+                    state,
+                    TransparencyEntryType::SignatureVerified,
                     Some(contract_uuid),
                     Some(db_sig.id),
                     &db_sig.signing_address,
-                ))
-                .execute(&state.db)
+                    None,
+                )
                 .await;
             }
 
@@ -362,29 +330,15 @@ pub async fn revoke_signature(
     .await
     .map_err(|err| db_internal_error("create revocation record", err))?;
 
-    let entry_hash = compute_transparency_hash(
-        &TransparencyEntryType::SignatureRevoked,
-        existing.contract_id.into(),
+    append_transparency_log_entry(
+        &state,
+        TransparencyEntryType::SignatureRevoked,
+        Some(existing.contract_id),
         Some(sig_uuid),
         &req.revoked_by,
-    );
-
-    sqlx::query(
-        r#"
-        INSERT INTO transparency_log 
-            (entry_type, contract_id, signature_id, actor_address, entry_hash, payload)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        "#,
+        serde_json::to_value(&req).ok(),
     )
-    .bind(TransparencyEntryType::SignatureRevoked.to_string())
-    .bind(existing.contract_id)
-    .bind(sig_uuid)
-    .bind(&req.revoked_by)
-    .bind(&entry_hash)
-    .bind(serde_json::to_value(&req).ok())
-    .execute(&state.db)
-    .await
-    .map_err(|err| db_internal_error("create transparency log entry", err))?;
+    .await?;
 
     tracing::info!(
         signature_id = %sig_uuid,
@@ -571,6 +525,136 @@ pub async fn get_transparency_log(
     Ok(Json(TransparencyLogResponse { items, total }))
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct TransparencyLogVerificationIssue {
+    pub entry_id: Uuid,
+    pub reason: String,
+    pub expected_previous_hash: Option<String>,
+    pub actual_previous_hash: Option<String>,
+    pub expected_entry_hash: Option<String>,
+    pub actual_entry_hash: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct TransparencyLogVerificationResponse {
+    pub valid: bool,
+    pub checked_entries: usize,
+    pub issues: Vec<TransparencyLogVerificationIssue>,
+}
+
+pub async fn verify_transparency_log(
+    State(state): State<AppState>,
+) -> ApiResult<Json<TransparencyLogVerificationResponse>> {
+    let entries: Vec<TransparencyLogEntry> = sqlx::query_as(
+        r#"
+        SELECT * FROM transparency_log
+        ORDER BY timestamp ASC, id ASC
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| db_internal_error("fetch transparency log for verification", err))?;
+
+    let issues = validate_transparency_chain(&entries);
+
+    Ok(Json(TransparencyLogVerificationResponse {
+        valid: issues.is_empty(),
+        checked_entries: entries.len(),
+        issues,
+    }))
+}
+
+async fn append_transparency_log_entry(
+    state: &AppState,
+    entry_type: TransparencyEntryType,
+    contract_id: Option<Uuid>,
+    signature_id: Option<Uuid>,
+    actor_address: &str,
+    payload: Option<serde_json::Value>,
+) -> ApiResult<()> {
+    let previous_hash: Option<String> = sqlx::query_scalar(
+        "SELECT entry_hash FROM transparency_log ORDER BY timestamp DESC, id DESC LIMIT 1",
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|err| db_internal_error("fetch previous transparency hash", err))?;
+
+    let entry_timestamp = Utc::now();
+    let entry_hash = compute_transparency_hash(
+        &entry_type,
+        contract_id,
+        signature_id,
+        actor_address,
+        previous_hash.as_deref(),
+        entry_timestamp.timestamp(),
+    );
+
+    sqlx::query(
+        r#"
+        INSERT INTO transparency_log
+            (entry_type, contract_id, signature_id, actor_address, previous_hash, entry_hash, payload, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(entry_type.to_string())
+    .bind(contract_id)
+    .bind(signature_id)
+    .bind(actor_address)
+    .bind(previous_hash)
+    .bind(entry_hash)
+    .bind(payload)
+    .bind(entry_timestamp)
+    .execute(&state.db)
+    .await
+    .map_err(|err| db_internal_error("create transparency log entry", err))?;
+
+    Ok(())
+}
+
+fn validate_transparency_chain(
+    entries: &[TransparencyLogEntry],
+) -> Vec<TransparencyLogVerificationIssue> {
+    let mut issues = Vec::new();
+    let mut expected_previous_hash: Option<String> = None;
+
+    for entry in entries {
+        if entry.previous_hash != expected_previous_hash {
+            issues.push(TransparencyLogVerificationIssue {
+                entry_id: entry.id,
+                reason: "previous_hash mismatch".to_string(),
+                expected_previous_hash: expected_previous_hash.clone(),
+                actual_previous_hash: entry.previous_hash.clone(),
+                expected_entry_hash: None,
+                actual_entry_hash: entry.entry_hash.clone(),
+            });
+        }
+
+        let recomputed_hash = compute_transparency_hash(
+            &entry.entry_type,
+            entry.contract_id,
+            entry.signature_id,
+            &entry.actor_address,
+            entry.previous_hash.as_deref(),
+            entry.timestamp.timestamp(),
+        );
+
+        if entry.entry_hash != recomputed_hash {
+            issues.push(TransparencyLogVerificationIssue {
+                entry_id: entry.id,
+                reason: "entry_hash mismatch".to_string(),
+                expected_previous_hash: expected_previous_hash.clone(),
+                actual_previous_hash: entry.previous_hash.clone(),
+                expected_entry_hash: Some(recomputed_hash),
+                actual_entry_hash: entry.entry_hash.clone(),
+            });
+        }
+
+        expected_previous_hash = Some(entry.entry_hash.clone());
+    }
+
+    issues
+}
+
 async fn parse_contract_uuid(state: &AppState, contract_id: &str) -> ApiResult<Uuid> {
     if let Ok(uuid) = Uuid::parse_str(contract_id) {
         return Ok(uuid);
@@ -600,8 +684,13 @@ pub(crate) fn compute_transparency_hash(
     contract_id: Option<Uuid>,
     signature_id: Option<Uuid>,
     actor_address: &str,
+    previous_hash: Option<&str>,
+    timestamp: i64,
 ) -> String {
     let mut hasher = Sha256::new();
+    if let Some(prev) = previous_hash {
+        hasher.update(prev.as_bytes());
+    }
     hasher.update(entry_type.to_string().as_bytes());
     if let Some(cid) = contract_id {
         hasher.update(cid.as_bytes());
@@ -610,6 +699,77 @@ pub(crate) fn compute_transparency_hash(
         hasher.update(sid.as_bytes());
     }
     hasher.update(actor_address.as_bytes());
-    hasher.update(Utc::now().timestamp().to_string().as_bytes());
+    hasher.update(timestamp.to_string().as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    fn make_log_entry(
+        entry_type: TransparencyEntryType,
+        previous_hash: Option<String>,
+        timestamp: chrono::DateTime<Utc>,
+    ) -> TransparencyLogEntry {
+        let contract_id = Some(Uuid::new_v4());
+        let signature_id = Some(Uuid::new_v4());
+        let actor_address = "GTESTACTORADDRESS0000000000000000000000000000000000".to_string();
+        let entry_hash = compute_transparency_hash(
+            &entry_type,
+            contract_id,
+            signature_id,
+            &actor_address,
+            previous_hash.as_deref(),
+            timestamp.timestamp(),
+        );
+
+        TransparencyLogEntry {
+            id: Uuid::new_v4(),
+            entry_type,
+            contract_id,
+            signature_id,
+            actor_address,
+            previous_hash,
+            entry_hash,
+            payload: None,
+            timestamp,
+            immutable: true,
+        }
+    }
+
+    #[test]
+    fn transparency_chain_detects_tampered_hash() {
+        let t1 = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let t2 = Utc.timestamp_opt(1_700_000_100, 0).unwrap();
+
+        let first = make_log_entry(TransparencyEntryType::PackageSigned, None, t1);
+        let mut second = make_log_entry(
+            TransparencyEntryType::SignatureRevoked,
+            Some(first.entry_hash.clone()),
+            t2,
+        );
+
+        second.entry_hash = "deadbeef".repeat(8);
+
+        let issues = validate_transparency_chain(&[first, second]);
+        assert!(issues.iter().any(|i| i.reason == "entry_hash mismatch"));
+    }
+
+    #[test]
+    fn transparency_chain_detects_broken_previous_link() {
+        let t1 = Utc.timestamp_opt(1_700_010_000, 0).unwrap();
+        let t2 = Utc.timestamp_opt(1_700_010_100, 0).unwrap();
+
+        let first = make_log_entry(TransparencyEntryType::PackageSigned, None, t1);
+        let second = make_log_entry(
+            TransparencyEntryType::SignatureVerified,
+            Some("not_the_real_previous_hash".to_string()),
+            t2,
+        );
+
+        let issues = validate_transparency_chain(&[first, second]);
+        assert!(issues.iter().any(|i| i.reason == "previous_hash mismatch"));
+    }
 }

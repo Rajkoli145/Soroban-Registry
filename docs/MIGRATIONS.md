@@ -82,9 +82,16 @@ NNN_short_description.sql
 
 | Part | Rule |
 |---|---|
-| `NNN` | Zero-padded three-digit integer, incremented from the last file. Check existing files before picking a number. |
+| `NNN` | Zero-padded three-digit integer, incremented from the last file. Check existing files before picking a number. **MUST be unique** — duplicates cause non-deterministic ordering. |
 | `_` | Literal underscore separator |
 | `short_description` | lowercase, words separated by underscores, ≤ 40 chars total |
+
+> ⚠️ **CRITICAL:** Migration prefixes MUST be unique. Duplicate prefixes create non-deterministic ordering based on alphabetical tiebreakers, which can cause:
+> - Schema inconsistencies between environments
+> - Migration checksum mismatches
+> - Failed migrations due to dependency order issues
+>
+> A CI check validates prefix uniqueness on every pull request.
 
 **Examples:**
 
@@ -551,3 +558,47 @@ pg_isready -h localhost -p 5432
 docker compose ps postgres
 docker compose logs postgres
 ```
+
+---
+
+## 11. Migration Prefix Validation
+
+### Automated CI Check
+
+A GitHub Actions workflow validates migration file naming on every pull request:
+
+**Script Location:** `.github/scripts/validate-migrations.sh`
+
+**Validations performed:**
+1. All migration prefixes are unique
+2. Prefixes are 3-digit zero-padded numbers
+3. Filenames follow naming convention (NNN_description.sql or YYYYMMDDHHMMSS_description.sql)
+4. Warning for gaps in sequential numbering
+
+### Running Locally
+
+```bash
+# Validate migrations before committing
+bash .github/scripts/validate-migrations.sh
+```
+
+**Example output:**
+```
+✅ All migration prefixes are unique
+✅ All prefixes are properly formatted
+⚠️  Gap detected: 012 → 014 (013 missing)
+✅ All migration filenames follow conventions
+```
+
+### Migration History - Fixed Duplicate Prefixes
+
+The following migrations were renumbered to fix duplicate prefix issues (Issue #319):
+
+| Old Filename | New Filename | Reason | Date Fixed |
+|--------------|--------------|--------|------------|
+| `003_indexer_state.sql` | `046_indexer_state.sql` | Duplicate prefix 003 (conflicted with `003_analytics.sql`) | 2026-02-25 |
+| `004_blue_green_deployments.sql` | `047_blue_green_deployments.sql` | Duplicate prefix 004 (conflicted with `004_add_upgrade_strategy.sql`) | 2026-02-25 |
+| `005_state_schema_and_migration_scripts.sql` | `048_state_schema_and_migration_scripts.sql` | Duplicate prefix 005 (conflicted with `005_create_migrations_table.sql`) | 2026-02-25 |
+| `038_contract_compatibility_testing.sql` | `049_contract_compatibility_testing.sql` | Duplicate prefix 038 (conflicted with `038_add_health_score.sql`) | 2026-02-25 |
+
+**Note:** These renames do not affect the database schema or data — they only fix the file ordering to be deterministic. The migrations themselves remain unchanged.
