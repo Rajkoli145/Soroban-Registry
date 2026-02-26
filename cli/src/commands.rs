@@ -259,13 +259,6 @@ pub async fn upgrade_analyze(api_url: &str, old_id: &str, new_id: &str, json_out
     use reqwest::StatusCode;
     use shared::upgrade::{compare_schemas, Schema};
 
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .context("Failed to fetch contract info")?;
-    if !response.status().is_success() {
-        anyhow::bail!("Contract not found on {}", network);
     // Helper to load schema from a local file
     let try_load_file = |path: &str| -> Option<Schema> {
         if std::path::Path::new(path).exists() {
@@ -305,30 +298,6 @@ pub async fn upgrade_analyze(api_url: &str, old_id: &str, new_id: &str, json_out
     }
     let new_json: serde_json::Value = new_res.json().await?;
 
-    println!(
-        "\n{}: {}",
-        "Name".bold(),
-        contract["name"].as_str().unwrap_or("Unknown")
-    );
-    println!(
-        "{}: {}",
-        "Contract ID".bold(),
-        contract["contract_id"].as_str().unwrap_or("")
-    );
-    println!(
-        "{}: {}",
-        "Network".bold(),
-        contract["network"].as_str().unwrap_or("").bright_blue()
-    );
-
-    let is_verified = contract["is_verified"].as_bool().unwrap_or(false);
-    println!(
-        "{}: {}",
-        "Verified".bold(),
-        if is_verified {
-            "✓ Yes".green()
-        } else {
-            "○ No".yellow()
     // Expect the API to expose a simple schema JSON in `state_schema` field; fall back to error.
     let old_schema_str = old_json["state_schema"].as_str().ok_or_else(|| anyhow::anyhow!("API did not return state_schema for old version"))?;
     let new_schema_str = new_json["state_schema"].as_str().ok_or_else(|| anyhow::anyhow!("API did not return state_schema for new version"))?;
@@ -376,18 +345,31 @@ mod upgrade_analyze_tests {
     }
 }
 
-    if let Some(tags) = contract["tags"].as_array() {
-        if !tags.is_empty() {
-            print!("\n{}: ", "Tags".bold());
-            for (i, tag) in tags.iter().enumerate() {
-                if i > 0 {
-                    print!(", ");
-                }
-                print!("{}", tag.as_str().unwrap_or("").bright_magenta());
-            }
-            println!();
 @@ -235,50 +235,61 @@ pub async fn list(api_url: &str, limit: usize, network: Network) -> Result<()> {
         let network = contract["network"].as_str().unwrap_or("");
+        println!(
+            "\n{}. {} {}",
+            i + 1,
+            name.bold(),
+            if is_verified {
+                "✓".green()
+            } else {
+                "".normal()
+            }
+        );
+        println!(
+            "   {} | {}",
+            contract_id.bright_black(),
+            network.bright_blue()
+        );
+    }
+
+    println!("\n{}", "=".repeat(80).cyan());
+    println!();
+
+    Ok(())
+}
+
 impl fmt::Display for Network {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
