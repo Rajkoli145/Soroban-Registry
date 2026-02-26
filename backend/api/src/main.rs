@@ -147,7 +147,15 @@ async fn main() -> Result<()> {
 
     // Create app state
     let is_shutting_down = Arc::new(AtomicBool::new(false));
-    let state = AppState::new(pool.clone(), registry, is_shutting_down.clone());
+background-job-queue
+  background-job-queue
+    let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone());
+    
+openapi-doc
+ openapi-doc
+    let state = AppState::new(pool.clone(), registry, job_engine, is_shutting_down.clone());
+    
+
 
     // Spawn the background DB and cache monitoring task
     db_monitoring::spawn_db_monitoring_task(pool.clone(), state.cache.clone());
@@ -162,6 +170,7 @@ async fn main() -> Result<()> {
     // Warm up the cache
     state.cache.clone().warm_up(pool.clone());
 
+main
     let rate_limit_state = RateLimitState::from_env();
     rate_limit_state.spawn_eviction_task();
 

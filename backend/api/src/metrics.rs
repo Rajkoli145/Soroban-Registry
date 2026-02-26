@@ -223,6 +223,23 @@ pub static MULTISIG_EXECUTIONS: Lazy<IntCounter> =
 pub static MULTISIG_REJECTIONS: Lazy<IntCounter> =
     counter!("multisig_rejections_total", "Multisig proposals rejected");
 
+// ── Job Queue ───────────────────────────────────────────────────────────────
+pub static JOB_QUEUE_DEPTH: Lazy<IntGaugeVec> = gauge_vec!(
+    "job_queue_depth",
+    "Current number of jobs in the queue",
+    &["type", "status"]
+);
+pub static JOB_PROCESSING_DURATION: Lazy<HistogramVec> = histogram_vec!(
+    "job_processing_duration_seconds",
+    "Job processing latency",
+    &["type"]
+);
+pub static JOB_FAILURES_TOTAL: Lazy<IntCounterVec> = counter_vec!(
+    "job_failures_total",
+    "Total number of job failures",
+    &["type"]
+);
+
 // ── System ──────────────────────────────────────────────────────────────────
 pub static PROCESS_START_TIME: Lazy<IntGauge> =
     gauge!("process_start_time_seconds", "Process start time");
@@ -322,6 +339,9 @@ pub fn register_all(r: &Registry) -> prometheus::Result<()> {
     r.register(Box::new(PATCHES_FAILED.clone()))?;
     r.register(Box::new(PUBLISHERS_TOTAL.clone()))?;
     r.register(Box::new(PUBLISHER_REGISTRATIONS.clone()))?;
+    r.register(Box::new(JOB_QUEUE_DEPTH.clone()))?;
+    r.register(Box::new(JOB_PROCESSING_DURATION.clone()))?;
+    r.register(Box::new(JOB_FAILURES_TOTAL.clone()))?;
     Ok(())
 }
 

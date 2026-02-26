@@ -4,6 +4,8 @@ use serde_json::Value;
 use std::fs;
 use colored::*;
 
+pub mod engine;
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
 pub enum OperationType {
