@@ -19,7 +19,7 @@ use shared::{
     DeploymentStats, InteractionTimeSeriesPoint, InteractionTimeSeriesResponse,
     InteractionsListResponse, InteractionsQueryParams, InteractorStats, Network, NetworkConfig,
     PaginatedResponse, PublishRequest, Publisher, SemVer, TimelineEntry, TopUser, TrendingParams,
-    UpdateContractMetadataRequest, UpdateContractStatusRequest, VerifyRequest,
+    UpdateContractMetadataRequest, UpdateContractStatusRequest, VerifyRequest, AuditStatus,
 };
 use std::time::Duration;
 use uuid::Uuid;
@@ -490,10 +490,16 @@ pub async fn list_contracts(
         }
     }
 
-    if let Some(ref category) = params.category {
-        let category_clause = format!(" AND c.category = '{}'", category);
-        query.push_str(&category_clause);
-        count_query.push_str(&category_clause);
+    if let Some(ref audit_status) = params.audit_status {
+        let status_str = match audit_status {
+            AuditStatus::None => "NONE",
+            AuditStatus::Pending => "PENDING",
+            AuditStatus::Passed => "PASSED",
+            AuditStatus::Failed => "FAILED",
+        };
+        let audit_clause = format!(" AND c.audit_status = '{}'", status_str);
+        query.push_str(&audit_clause);
+        count_query.push_str(&audit_clause);
     }
 
     // Filter by network(s) (Issue #43)
@@ -544,7 +550,7 @@ pub async fn list_contracts(
         shared::SortBy::Popularity | shared::SortBy::Interactions => {
             "COUNT(DISTINCT ci.id)".to_string()
         }
-        shared::SortBy::Deployments => "COUNT(DISTINCT cv.id)".to_string(),
+        shared::SortBy::Deployments => "c.deployment_count".to_string(),
         shared::SortBy::Relevance => {
             if let Some(ref q) = params.query {
                 format!(
@@ -986,6 +992,14 @@ pub async fn create_contract_version(
     .execute(&mut *tx)
     .await
     .map_err(|err| db_internal_error("insert contract abi", err))?;
+
+    sqlx::query(
+        "UPDATE contracts SET deployment_count = deployment_count + 1 WHERE id = $1",
+    )
+    .bind(contract_uuid)
+    .execute(&mut *tx)
+    .await
+    .map_err(|err| db_internal_error("increment deployment count", err))?;
 
     tx.commit()
         .await
@@ -1955,8 +1969,9 @@ pub async fn verify_contract(
             .await
             .map_err(|err| db_internal_error("mark verification as verified", err))?;
 
+            // Update contract metadata (Issue #401)
             sqlx::query(
-                "UPDATE contracts SET is_verified = true, updated_at = NOW() WHERE id = $1",
+                "UPDATE contracts SET last_verified_at = NOW(), is_verified = true, updated_at = NOW() WHERE id = $1",
             )
             .bind(contract.id)
             .execute(&state.db)

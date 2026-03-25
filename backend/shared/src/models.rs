@@ -33,6 +33,11 @@ pub struct Contract {
     /// Per-network config: { "mainnet": { contract_id, is_verified, min_version, max_version }, ... }
     #[serde(default)]
     pub network_configs: Option<serde_json::Value>,
+    /// New metadata fields (Issue #401)
+    pub last_verified_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub deployment_count: i32,
+    pub audit_status: AuditStatus,
 }
 
 /// Response for GET /contracts/:id with optional network-specific slice (Issue #43)
@@ -135,6 +140,22 @@ pub enum VerificationStatus {
     Pending,
     Verified,
     Failed,
+}
+
+/// Security audit status of the contract (Issue #401)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, utoipa::ToSchema, PartialEq)]
+#[sqlx(type_name = "audit_status_type", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AuditStatus {
+    None,
+    Pending,
+    Passed,
+    Failed,
+}
+
+impl Default for AuditStatus {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 /// Contract maturity level - indicates stability and production readiness
@@ -390,6 +411,8 @@ pub struct ContractSearchParams {
     pub sort_by: Option<SortBy>,
     pub sort_order: Option<SortOrder>,
     pub cursor: Option<String>,
+    /// Filter by audit status (Issue #401)
+    pub audit_status: Option<AuditStatus>,
 }
 
 /// Pagination params for contract versions (limit/offset style)
