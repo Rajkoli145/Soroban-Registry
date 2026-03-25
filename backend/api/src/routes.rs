@@ -1,10 +1,10 @@
 #[cfg(feature = "openapi")]
 use crate::openapi;
 use crate::{
-    ab_test_handlers, auth, auth_handlers, batch_verify_handlers, breaking_changes,
-    canary_handlers, category_handlers, compatibility_testing_handlers, custom_metrics_handlers,
-    deprecation_handlers, handlers, metrics_handler, migration_handlers, performance_handlers,
-    resource_handlers, simulation_handlers, state::AppState,
+    ab_test_handlers, analytics_handlers, auth, auth_handlers, batch_verify_handlers,
+    breaking_changes, canary_handlers, category_handlers, compatibility_testing_handlers,
+    custom_metrics_handlers, deprecation_handlers, handlers, metrics_handler, migration_handlers,
+    performance_handlers, resource_handlers, simulation_handlers, state::AppState,
 };
 use axum::{
     middleware,
@@ -103,7 +103,7 @@ pub fn contract_routes() -> Router<AppState> {
         )
         .route(
             "/api/contracts/:id/analytics",
-            get(handlers::get_contract_analytics),
+            get(analytics_handlers::get_contract_analytics),
         )
         .route(
             "/api/contracts/:id/trust-score",
@@ -212,6 +212,11 @@ pub fn health_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(handlers::health_check))
         .route("/api/stats", get(handlers::get_stats))
+        // Registry-wide analytics summary (issue #415)
+        .route(
+            "/api/analytics/summary",
+            get(analytics_handlers::get_analytics_summary),
+        )
 }
 
 pub fn health_monitor_routes() -> Router<AppState> {

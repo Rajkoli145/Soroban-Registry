@@ -13,13 +13,13 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde_json::{json, Value};
 use shared::{
     pagination::Cursor, AnalyticsEventType, AuditActionType, ChangePublisherRequest, Contract,
-    ContractAnalyticsResponse, ContractAuditLog, ContractChangelogEntry, ContractChangelogResponse,
-    ContractGetResponse, ContractInteractionResponse, ContractSearchParams, ContractVersion,
+    ContractAuditLog, ContractChangelogEntry, ContractChangelogResponse, ContractGetResponse,
+    ContractInteractionResponse, ContractSearchParams, ContractVersion,
     CreateContractVersionRequest, CreateInteractionBatchRequest, CreateInteractionRequest,
-    DeploymentStats, InteractionTimeSeriesPoint, InteractionTimeSeriesResponse,
-    InteractionsListResponse, InteractionsQueryParams, InteractorStats, Network, NetworkConfig,
-    PaginatedResponse, PublishRequest, Publisher, SemVer, TimelineEntry, TopUser, TrendingParams,
-    UpdateContractMetadataRequest, UpdateContractStatusRequest, VerifyRequest,
+    InteractionTimeSeriesPoint, InteractionTimeSeriesResponse, InteractionsListResponse,
+    InteractionsQueryParams, Network, NetworkConfig, PaginatedResponse, PublishRequest, Publisher,
+    SemVer, TrendingParams, UpdateContractMetadataRequest, UpdateContractStatusRequest,
+    VerifyRequest,
 };
 use std::time::Duration;
 use uuid::Uuid;
@@ -658,6 +658,10 @@ pub async fn get_contract(
     } else {
         None
     };
+
+    // Increment view_count asynchronously so this read path is never blocked
+    // waiting for a write.  Errors are logged inside the spawned task.
+    crate::analytics::increment_view_count_async(state.db.clone(), contract_uuid);
 
     Ok(Json(ContractGetResponse {
         contract,
@@ -1521,100 +1525,6 @@ pub async fn update_contract_state() -> impl IntoResponse {
     planned_not_implemented_response()
 }
 
-/// GET /api/contracts/:id/analytics — timeline and top users from contract_interactions (Issue #46).
-#[utoipa::path(
-    get,
-    path = "/api/contracts/{id}/analytics",
-    params(
-        ("id" = String, Path, description = "Contract UUID")
-    ),
-    responses(
-        (status = 200, description = "Contract analytics and usage data", body = ContractAnalyticsResponse),
-        (status = 404, description = "Contract not found")
-    ),
-    tag = "Analytics"
-)]
-pub async fn get_contract_analytics(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> ApiResult<Json<ContractAnalyticsResponse>> {
-    let contract_uuid = Uuid::parse_str(&id).map_err(|_| {
-        ApiError::bad_request(
-            "InvalidContractId",
-            format!("Invalid contract ID format: {}", id),
-        )
-    })?;
-
-    ensure_contract_exists(&state, contract_uuid, &id, "get contract for analytics").await?;
-
-    let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
-
-    let unique_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT user_address) FROM contract_interactions \
-         WHERE contract_id = $1 AND user_address IS NOT NULL",
-    )
-    .bind(contract_uuid)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| db_internal_error("analytics unique interactors", e))?;
-
-    let top_user_rows: Vec<(Option<String>, i64)> = sqlx::query_as(
-        "SELECT user_address, COUNT(*) AS cnt FROM contract_interactions \
-         WHERE contract_id = $1 AND user_address IS NOT NULL \
-         GROUP BY user_address ORDER BY cnt DESC LIMIT 10",
-    )
-    .bind(contract_uuid)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| db_internal_error("analytics top users", e))?;
-
-    let top_users: Vec<TopUser> = top_user_rows
-        .into_iter()
-        .filter_map(|(addr, count)| addr.map(|a| TopUser { address: a, count }))
-        .collect();
-
-    let timeline_rows: Vec<(chrono::NaiveDate, i64)> = sqlx::query_as(
-        r#"
-        SELECT d::date AS date, COALESCE(e.cnt, 0)::bigint AS count
-        FROM generate_series(
-            ($1::timestamptz)::date,
-            CURRENT_DATE,
-            '1 day'::interval
-        ) d
-        LEFT JOIN (
-            SELECT created_at::date AS event_date, COUNT(*) AS cnt
-            FROM contract_interactions
-            WHERE contract_id = $2 AND created_at >= $1
-            GROUP BY created_at::date
-        ) e ON d::date = e.event_date
-        ORDER BY d::date
-        "#,
-    )
-    .bind(thirty_days_ago)
-    .bind(contract_uuid)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| db_internal_error("analytics timeline", e))?;
-
-    let timeline: Vec<TimelineEntry> = timeline_rows
-        .into_iter()
-        .map(|(date, count)| TimelineEntry { date, count })
-        .collect();
-
-    Ok(Json(ContractAnalyticsResponse {
-        contract_id: contract_uuid,
-        deployments: DeploymentStats {
-            count: 0,
-            unique_users: 0,
-            by_network: serde_json::json!({}),
-        },
-        interactors: InteractorStats {
-            unique_count,
-            top_users,
-        },
-        timeline,
-    }))
-}
 
 pub async fn get_trust_score() -> impl IntoResponse {
     planned_not_implemented_response()

@@ -14,6 +14,7 @@ mod db_monitoring;
 
 mod activity_feed_handlers;
 mod activity_feed_routes;
+mod analytics_handlers;
 mod category_handlers;
 mod custom_metrics_handlers;
 mod dependency;
