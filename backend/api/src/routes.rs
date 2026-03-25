@@ -4,7 +4,7 @@ use crate::{
     ab_test_handlers, auth, auth_handlers, batch_verify_handlers, breaking_changes,
     canary_handlers, compatibility_testing_handlers, custom_metrics_handlers, deprecation_handlers,
     handlers, metrics_handler, migration_handlers, performance_handlers, resource_handlers,
-    simulation_handlers, state::AppState,
+    simulation_handlers, state::AppState, websocket,
 };
 use axum::{
     middleware,
@@ -358,4 +358,9 @@ pub fn admin_routes() -> Router<AppState> {
         .route("/api/admin/audit-logs", get(handlers::get_all_audit_logs))
         .merge(migration_routes())
         .route_layer(middleware::from_fn(auth::require_admin))
+}
+
+pub fn websocket_routes() -> Router<AppState> {
+    Router::new()
+        .route("/ws/contracts", axum::routing::get(websocket::websocket_handler))
 }

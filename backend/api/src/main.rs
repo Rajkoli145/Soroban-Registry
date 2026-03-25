@@ -18,6 +18,7 @@ mod custom_metrics_handlers;
 mod dependency;
 mod deprecation_handlers;
 mod error;
+mod events;
 mod handlers;
 mod health;
 pub mod health_monitor;
@@ -43,6 +44,7 @@ mod simulation_handlers;
 mod state;
 mod type_safety;
 mod validation;
+mod websocket;
 
 use anyhow::Result;
 use axum::extract::{Request, State};
@@ -219,6 +221,7 @@ async fn main() -> Result<()> {
         .merge(routes::ab_test_routes())
         .merge(routes::performance_routes())
         .merge(routes::observability_routes())
+        .merge(routes::websocket_routes())
         .merge(release_notes_routes::release_notes_routes())
         .nest("/api", activity_feed_routes::routes())
         .fallback(handlers::route_not_found)
