@@ -26,6 +26,7 @@ mod health_tests;
 mod metrics;
 mod metrics_handler;
 mod migration_handlers;
+mod onchain_verification;
 #[cfg(feature = "openapi")]
 mod openapi;
 mod performance_handlers;
