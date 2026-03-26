@@ -26,6 +26,7 @@ import MaintenanceBanner from "@/components/MaintenanceBanner";
 import CustomMetricsPanel from "@/components/CustomMetricsPanel";
 import DeprecationBanner from "@/components/DeprecationBanner";
 import ReleaseNotesPanel from "@/components/ReleaseNotesPanel";
+import PerformancePanel from "@/components/PerformancePanel";
 
 const NETWORKS: Network[] = ["mainnet", "testnet", "futurenet"];
 
@@ -258,6 +259,9 @@ function ContractDetailsContent() {
 
           {/* Interaction History (Issue #46) */}
           <InteractionHistorySection contractId={contract.id} />
+
+          <PerformancePanel contractId={contract.id} />
+
           {/* Custom Metrics */}
           <CustomMetricsPanel contractId={contract.id} />
         </div>

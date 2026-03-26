@@ -140,6 +140,73 @@ export interface ContractVersion {
   created_at: string;
 }
 
+export interface PerformanceBenchmark {
+  id: string;
+  contract_id: string;
+  contract_version_id?: string | null;
+  version?: string | null;
+  benchmark_name: string;
+  execution_time_ms: number;
+  gas_used: number;
+  sample_size: number;
+  source: string;
+  recorded_at: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface PerformanceMetricSnapshot {
+  metric_type: string;
+  benchmark_name?: string | null;
+  latest_value: number;
+  previous_value?: number | null;
+  change_percent?: number | null;
+  recorded_at: string;
+}
+
+export interface PerformanceTrendPoint {
+  bucket_start: string;
+  bucket_end: string;
+  benchmark_name: string;
+  avg_execution_time_ms: number;
+  avg_gas_used: number;
+  sample_count: number;
+}
+
+export interface PerformanceRegression {
+  benchmark_name: string;
+  current_version?: string | null;
+  previous_version?: string | null;
+  execution_time_regression_percent?: number | null;
+  gas_regression_percent?: number | null;
+  severity: string;
+  detected_at: string;
+}
+
+export interface PerformanceComparisonEntry {
+  contract_id: string;
+  contract_name: string;
+  category?: string | null;
+  benchmark_name: string;
+  avg_execution_time_ms: number;
+  avg_gas_used: number;
+  sample_count: number;
+}
+
+export interface ContractPerformanceSummary {
+  contract_id: string;
+  latest_benchmarks: PerformanceBenchmark[];
+  metric_snapshots: PerformanceMetricSnapshot[];
+  trends: PerformanceTrendPoint[];
+  regressions: PerformanceRegression[];
+  comparisons: PerformanceComparisonEntry[];
+  unresolved_alerts: Array<{
+    id: string;
+    severity: string;
+    message?: string | null;
+    triggered_at: string;
+  }>;
+}
+
 export interface Publisher {
   id: string;
   stellar_address: string;
@@ -616,6 +683,25 @@ export const api = {
     return handleApiCall<ContractVersion[]>(
       () => fetch(`${API_URL}/api/contracts/${id}/versions`),
       `/api/contracts/${id}/versions`
+    );
+  },
+
+  async getContractPerformance(id: string): Promise<ContractPerformanceSummary> {
+    if (USE_MOCKS) {
+      return {
+        contract_id: id,
+        latest_benchmarks: [],
+        metric_snapshots: [],
+        trends: [],
+        regressions: [],
+        comparisons: [],
+        unresolved_alerts: [],
+      };
+    }
+
+    return handleApiCall<ContractPerformanceSummary>(
+      () => fetch(`${API_URL}/api/contracts/${id}/performance`),
+      `/api/contracts/${id}/performance`
     );
   },
 
