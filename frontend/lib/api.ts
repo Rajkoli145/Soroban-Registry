@@ -312,29 +312,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
 /**
- * Helper to create a mock response with a delay
- */
-function _mockResponse<T>(data: T, delay = 300): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(data), delay));
-}
-
-/**
- * Helper to build query string from params object
- */
-function _buildQueryParams(params: Record<string, string | number | boolean | string[] | undefined>): URLSearchParams {
-  const qs = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null) continue;
-    if (Array.isArray(value)) {
-      value.forEach(v => qs.append(key, v));
-    } else {
-      qs.append(key, String(value));
-    }
-  }
-  return qs;
-}
-
-/**
  * Wrapper for API calls with consistent error handling
  */
 async function handleApiCall<T>(
