@@ -1,10 +1,11 @@
 #[cfg(feature = "openapi")]
 use crate::openapi;
 use crate::{
-    ab_test_handlers, auth, auth_handlers, batch_verify_handlers, breaking_changes,
-    canary_handlers, category_handlers, compatibility_testing_handlers, contract_events,
-    custom_metrics_handlers, deprecation_handlers, handlers, metrics_handler, migration_handlers,
-    performance_handlers, resource_handlers, similarity_handlers, simulation_handlers,
+    ab_test_handlers, analytics_handlers, auth, auth_handlers, batch_verify_handlers,
+    breaking_changes, canary_handlers, category_handlers, compatibility_testing_handlers,
+    contract_events, custom_metrics_handlers, deprecation_handlers, handlers, metrics_handler,
+    migration_handlers, org_handlers, performance_handlers, recommendation_handlers,
+    resource_handlers, similarity_handlers, simulation_handlers,
     state::AppState, websocket,
 };
 
@@ -124,7 +125,7 @@ pub fn contract_routes() -> Router<AppState> {
         )
         .route(
             "/api/analytics/dashboard",
-            get(handlers::get_dashboard_analytics),
+            get(analytics_handlers::get_analytics_summary),
         )
         .route(
             "/api/contracts/:id/dependencies",
@@ -145,6 +146,14 @@ pub fn contract_routes() -> Router<AppState> {
         .route(
             "/api/contracts/:id/similar",
             get(similarity_handlers::get_similar_contracts),
+        )
+        .route(
+            "/api/contracts/:id/recommendations",
+            get(recommendation_handlers::get_contract_recommendations),
+        )
+        .route(
+            "/contracts/:id/recommendations",
+            get(recommendation_handlers::get_contract_recommendations),
         )
         .route(
             "/contracts/:id/similar",
@@ -340,6 +349,10 @@ pub fn compatibility_dashboard_routes() -> Router<AppState> {
         "/api/compatibility-dashboard",
         get(compatibility_testing_handlers::get_compatibility_dashboard),
     )
+}
+
+pub fn category_routes() -> Router<AppState> {
+    Router::new().route("/api/categories", get(category_handlers::list_categories))
 }
 
 pub fn canary_routes() -> Router<AppState> {
