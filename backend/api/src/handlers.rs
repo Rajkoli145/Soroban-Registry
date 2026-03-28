@@ -1267,6 +1267,15 @@ pub async fn publish_contract(
     )
     .await;
 
+    // Emit real-time deployment event
+    crate::events::emit_contract_deployment(
+        &state,
+        contract.contract_id.clone(),
+        contract.name.clone(),
+        publisher.stellar_address.clone(),
+        "1.0.0".to_string(), // Version can be pulled from the contract metadata
+    );
+
     Ok(Json(contract))
 }
 
