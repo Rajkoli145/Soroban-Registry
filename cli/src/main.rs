@@ -30,6 +30,7 @@ mod test_framework;
 mod webhook;
 mod wizard;
 mod cicd;
+mod track_deployment;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -497,6 +498,29 @@ pub enum Commands {
     Network {
         #[command(subcommand)]
         action: NetworkCommands,
+    },
+
+    /// Track contract deployment progress and confirm it is live on-chain (#524)
+    TrackDeployment {
+        /// On-chain contract ID to track
+        #[arg(long)]
+        contract_id: String,
+
+        /// Stellar network (mainnet | testnet | futurenet)
+        #[arg(long, default_value = "testnet")]
+        network: String,
+
+        /// Transaction hash of the deployment (optional — enables direct RPC/Horizon lookup)
+        #[arg(long)]
+        tx_hash: Option<String>,
+
+        /// Maximum seconds to wait for confirmation before timing out (exit code 2)
+        #[arg(long, default_value_t = 60)]
+        wait_timeout: u64,
+
+        /// Output results as machine-readable JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1846,6 +1870,32 @@ async fn main() -> Result<()> {
                 network::status(json).await?;
             }
         },
+
+        // ── Track deployment command (issue #524) ────────────────────────────
+        Commands::TrackDeployment {
+            contract_id,
+            network: net_str,
+            tx_hash,
+            wait_timeout,
+            json,
+        } => {
+            log::debug!(
+                "Command: track-deployment | contract_id={} network={} tx_hash={:?} timeout={}",
+                contract_id,
+                net_str,
+                tx_hash,
+                wait_timeout
+            );
+            track_deployment::run(
+                &cli.api_url,
+                &contract_id,
+                &net_str,
+                tx_hash.as_deref(),
+                wait_timeout,
+                json,
+            )
+            .await?;
+        }
     }
 
     Ok(())
