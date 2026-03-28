@@ -252,6 +252,7 @@ async fn main() -> Result<()> {
         .merge(routes::canary_routes())
         .merge(routes::ab_test_routes())
         .merge(routes::performance_routes())
+        .merge(multisig_routes::routes())
         .merge(routes::observability_routes())
         .merge(routes::websocket_routes())
         .merge(release_notes_routes::release_notes_routes())
