@@ -26,6 +26,7 @@ import MaintenanceBanner from "@/components/MaintenanceBanner";
 import CustomMetricsPanel from "@/components/CustomMetricsPanel";
 import DeprecationBanner from "@/components/DeprecationBanner";
 import ReleaseNotesPanel from "@/components/ReleaseNotesPanel";
+import { useContractAutoRefresh } from "@/hooks/useContractAutoRefresh";
 
 const NETWORKS: Network[] = ["mainnet", "testnet", "futurenet"];
 
@@ -107,6 +108,8 @@ function ContractDetailsContent() {
       </div>
     );
   }
+  // Subscribe to real-time contract updates
+  useContractAutoRefresh(id);
 
   const {
     data: contract,

@@ -1,10 +1,11 @@
 'use client';
 
-import { Package, GitBranch, ChevronDown, BarChart2, Users, Menu, X, Layers, Search, Plus, Columns2, ShieldCheck } from 'lucide-react';
+import { Package, GitBranch, ChevronDown, BarChart2, Users, Menu, X, Layers, Search, Plus, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useRef } from 'react';
 import ThemeToggle from './ThemeToggle';
+import NotificationBell from './NotificationBell';
 
 export default function Navbar() {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -128,6 +129,17 @@ export default function Navbar() {
                                             Statistics
                                         </Link>
                                         <Link
+                                            href="/analytics"
+                                            className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
+                                                isActive('/analytics')
+                                                    ? 'text-primary bg-primary/5'
+                                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                                            }`}
+                                        >
+                                            <PieChart className="w-3.5 h-3.5 text-primary/70" />
+                                            Analytics
+                                        </Link>
+                                        <Link
                                             href="/templates"
                                             className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors ${
                                                 isActive('/templates')
@@ -159,6 +171,7 @@ export default function Navbar() {
                     {/* Right actions */}
                     <div className="hidden md:flex items-center gap-1.5">
                         <ThemeToggle />
+                        <NotificationBell />
                         <Link
                             href="/publish"
                             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-primary text-primary-foreground text-[13px] font-semibold btn-glow transition-all hover:brightness-110"
@@ -191,6 +204,7 @@ export default function Navbar() {
                                 { href: '/verify-contract', label: 'Verify Contract', icon: ShieldCheck },
                                 { href: '/publishers', label: 'Publishers', icon: Users },
                                 { href: '/stats', label: 'Statistics', icon: BarChart2 },
+                                { href: '/analytics', label: 'Analytics', icon: PieChart },
                                 { href: '/templates', label: 'Templates', icon: Layers },
                                 { href: '/graph', label: 'Dependency Graph', icon: GitBranch },
                             ].map(({ href, label, icon: Icon }) => (
