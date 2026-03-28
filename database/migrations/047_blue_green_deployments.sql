@@ -1,7 +1,13 @@
-CREATE TYPE deployment_environment AS ENUM ('blue', 'green');
-CREATE TYPE deployment_status AS ENUM ('active', 'inactive', 'testing', 'failed');
+-- Types and table already created in 009_canary_releases.sql; skip if exists
+DO $$ BEGIN
+    CREATE TYPE deployment_environment AS ENUM ('blue', 'green');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TABLE contract_deployments (
+DO $$ BEGIN
+    CREATE TYPE deployment_status AS ENUM ('active', 'inactive', 'testing', 'failed');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS contract_deployments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
     environment deployment_environment NOT NULL,
@@ -16,10 +22,10 @@ CREATE TABLE contract_deployments (
     UNIQUE(contract_id, environment)
 );
 
-CREATE INDEX idx_contract_deployments_contract_id ON contract_deployments(contract_id);
-CREATE INDEX idx_contract_deployments_status ON contract_deployments(status);
-CREATE INDEX idx_contract_deployments_environment ON contract_deployments(environment);
-CREATE INDEX idx_contract_deployments_active ON contract_deployments(contract_id, status) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_contract_deployments_contract_id ON contract_deployments(contract_id);
+CREATE INDEX IF NOT EXISTS idx_contract_deployments_status ON contract_deployments(status);
+CREATE INDEX IF NOT EXISTS idx_contract_deployments_environment ON contract_deployments(environment);
+CREATE INDEX IF NOT EXISTS idx_contract_deployments_active ON contract_deployments(contract_id, status) WHERE status = 'active';
 
 CREATE TABLE deployment_switches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

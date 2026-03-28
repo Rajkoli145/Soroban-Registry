@@ -268,7 +268,7 @@ pub async fn create_verifications(
 
             let result = sqlx::query(
                 "INSERT INTO verifications (contract_id, status, compiler_version, verified_at)
-                 SELECT $1, $2, $3, $4
+                 SELECT $1, $2::verification_status, $3, $4
                  WHERE NOT EXISTS (
                      SELECT 1 FROM verifications WHERE contract_id = $1
                  )",

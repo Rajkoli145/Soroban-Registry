@@ -1,3 +1,27 @@
+-- contract_deployments is needed here but defined later in 047; create it early
+CREATE TYPE deployment_environment AS ENUM ('blue', 'green');
+CREATE TYPE deployment_status AS ENUM ('active', 'inactive', 'testing', 'failed');
+
+CREATE TABLE contract_deployments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+    environment deployment_environment NOT NULL,
+    status deployment_status NOT NULL DEFAULT 'inactive',
+    wasm_hash VARCHAR(64) NOT NULL,
+    deployed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    activated_at TIMESTAMPTZ,
+    health_checks_passed INTEGER DEFAULT 0,
+    health_checks_failed INTEGER DEFAULT 0,
+    last_health_check_at TIMESTAMPTZ,
+    error_message TEXT,
+    UNIQUE(contract_id, environment)
+);
+
+CREATE INDEX idx_contract_deployments_contract_id ON contract_deployments(contract_id);
+CREATE INDEX idx_contract_deployments_status ON contract_deployments(status);
+CREATE INDEX idx_contract_deployments_environment ON contract_deployments(environment);
+CREATE INDEX idx_contract_deployments_active ON contract_deployments(contract_id, status) WHERE status = 'active';
+
 CREATE TYPE canary_status AS ENUM ('pending', 'active', 'paused', 'completed', 'rolled_back', 'failed');
 CREATE TYPE rollout_stage AS ENUM ('stage_1', 'stage_2', 'stage_3', 'stage_4', 'complete');
 

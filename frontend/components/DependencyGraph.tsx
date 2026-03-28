@@ -312,7 +312,7 @@ const DependencyGraph = forwardRef<DependencyGraphHandle, DependencyGraphProps>(
           .attr("fill", "#d1d5db")
           .attr("font-size", "10px")
           .attr("pointer-events", "none")
-          .text((d) => d.data.name.length > 14 ? d.data.name.slice(0, 13) + "…" : d.data.name);
+          .text((d) => { const n = d.data.name ?? d.data.contract_id ?? ""; return n.length > 14 ? n.slice(0, 13) + "…" : n; });
       }
 
       // ── Drag ──
@@ -647,7 +647,7 @@ const DependencyGraph = forwardRef<DependencyGraphHandle, DependencyGraphProps>(
             >
               <p className="font-semibold text-foreground mb-1 truncate">{tooltip.node.name}</p>
               <p className="font-mono text-muted-foreground truncate text-[10px] mb-1.5">
-                {tooltip.node.contract_id.slice(0, 12)}…
+                {tooltip.node.contract_id ? tooltip.node.contract_id.slice(0, 12) + "…" : "—"}
               </p>
               <div className="space-y-0.5">
                 <div className="flex justify-between gap-4">

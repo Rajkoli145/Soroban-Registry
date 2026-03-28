@@ -51,7 +51,7 @@ const maintenanceStatus: { is_maintenance: boolean; current_window: null } = {
 
 /** Flatten a recursive DependencyTreeNode[] into GraphNode[] + GraphEdge[]. */
 function flattenDependencyTree(
-  tree: DependencyTreeNode[],
+  tree: DependencyTreeNode | DependencyTreeNode[],
   network: Network = "mainnet"
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
@@ -82,7 +82,8 @@ function flattenDependencyTree(
     }
   }
 
-  for (const root of tree) {
+  const roots = Array.isArray(tree) ? tree : [tree];
+  for (const root of roots) {
     walk(root);
   }
   return { nodes, edges };
@@ -276,7 +277,7 @@ function ContractDetailsContent() {
   });
 
   const depGraph = useMemo(
-    () => (dependencies ? flattenDependencyTree(dependencies, selectedNetwork) : null),
+    () => (dependencies ? flattenDependencyTree(dependencies as DependencyTreeNode | DependencyTreeNode[], selectedNetwork) : null),
     [dependencies, selectedNetwork]
   );
 
