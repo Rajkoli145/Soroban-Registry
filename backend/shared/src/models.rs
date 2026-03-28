@@ -832,6 +832,22 @@ pub enum DeploymentStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
+pub struct ContractDeploymentHistory {
+    pub deployed_at: DateTime<Utc>,
+    pub network: Network,
+    pub deployer_address: Option<String>,
+    pub transaction_hash: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct DeploymentHistoryQueryParams {
+    pub page: Option<i64>,
+    pub limit: Option<i64>,
+    pub from_date: Option<DateTime<Utc>>,
+    pub to_date: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct ContractDeployment {
     pub id: Uuid,
     pub contract_id: Uuid,
