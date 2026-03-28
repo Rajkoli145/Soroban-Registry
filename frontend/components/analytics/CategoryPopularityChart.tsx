@@ -98,9 +98,20 @@ const CategoryPopularityChart: React.FC<CategoryPopularityChartProps> = ({ data 
                 }}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="searches" name="Searches" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="views" name="Views" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="deployments" name="Deployments" fill="#10b981" radius={[3, 3, 0, 0]} />
+              {metric === 'searches' && (
+                <Bar dataKey="searches" name="Searches" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+              )}
+              {metric === 'views' && (
+                <Bar dataKey="views" name="Views" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+              )}
+              {metric === 'deployments' && (
+                <Bar
+                  dataKey="deployments"
+                  name="Deployments"
+                  fill="#10b981"
+                  radius={[3, 3, 0, 0]}
+                />
+              )}
             </BarChart>
           ) : (
             <PieChart>
