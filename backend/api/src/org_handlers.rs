@@ -59,7 +59,7 @@ pub async fn create_organization(
         "#,
         org.id,
         publisher_id,
-        OrganizationRole::Admin as OrganizationRole
+        OrganizationRole::Admin
     )
     .execute(&mut *tx)
     .await
