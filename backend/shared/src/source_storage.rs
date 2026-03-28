@@ -141,7 +141,7 @@ impl SourceStorage {
             "{}/{}/{}/{}.{}",
             contract_id,
             version,
-            format.to_string(),
+            format,
             Uuid::new_v4(),
             "bin"
         );
