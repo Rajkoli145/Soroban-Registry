@@ -200,6 +200,38 @@ export interface Publisher {
   created_at: string;
 }
 
+export type AnalyticsEventType = 
+  | 'contract_published' 
+  | 'contract_verified' 
+  | 'contract_deployed' 
+  | 'version_created' 
+  | 'contract_updated' 
+  | 'publisher_created' 
+  | 'search_click';
+
+export interface AnalyticsEvent {
+  id: string;
+  event_type: AnalyticsEventType;
+  contract_id: string;
+  user_address: string | null;
+  network: Network | null;
+  metadata: any;
+  created_at: string;
+}
+
+export interface ActivityFeedParams {
+  cursor?: string;
+  limit?: number;
+  event_type?: AnalyticsEventType;
+}
+
+export interface ActivityFeedResponse {
+  items: AnalyticsEvent[];
+  total: number;
+  limit: number;
+  next_cursor: string | null;
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
@@ -795,6 +827,49 @@ export const api = {
     const response = await fetch(`${API_URL}/api/contracts/${id}/analytics`);
     if (!response.ok) throw new Error("Failed to fetch contract analytics");
     return response.json();
+  },
+
+  async getActivityFeed(params?: ActivityFeedParams): Promise<ActivityFeedResponse> {
+    if (USE_MOCKS) {
+      // Basic mock for activity feed
+      const items: AnalyticsEvent[] = [
+        {
+          id: '1',
+          event_type: 'contract_published',
+          contract_id: 'C123...',
+          user_address: 'G...123',
+          network: 'testnet',
+          metadata: { name: 'SorobanToken' },
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: '2',
+          event_type: 'contract_verified',
+          contract_id: 'C456...',
+          user_address: 'G...456',
+          network: 'mainnet',
+          metadata: { name: 'BridgeContract' },
+          created_at: new Date(Date.now() - 3600000).toISOString(),
+        }
+      ];
+      return {
+        items,
+        total: items.length,
+        limit: params?.limit ?? 20,
+        next_cursor: null,
+      };
+    }
+
+    const search = new URLSearchParams();
+    if (params?.cursor) search.set("cursor", params.cursor);
+    if (params?.limit != null) search.set("limit", String(params.limit));
+    if (params?.event_type) search.set("event_type", params.event_type);
+
+    const qs = search.toString();
+    return handleApiCall<ActivityFeedResponse>(
+      () => fetch(`${API_URL}/api/activity-feed${qs ? `?${qs}` : ""}`),
+      "/api/activity-feed"
+    );
   },
 
   async publishContract(data: PublishRequest): Promise<Contract> {
