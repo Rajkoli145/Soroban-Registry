@@ -231,7 +231,7 @@ pub async fn get_reviews(
     Query(query): Query<GetReviewsQuery>,
 ) -> ApiResult<Json<Vec<ReviewResponse>>> {
     // Validate limit (max 100 to prevent abuse)
-    let limit = query.limit.min(100).max(1);
+    let limit = query.limit.clamp(1, 100);
 
     // Build ORDER BY clause based on sort_by parameter
     let order_clause = match query.sort_by {
@@ -727,6 +727,7 @@ pub async fn get_rating_stats(
 // HELPER: Get pending reviews count (for admin dashboard)
 // ═══════════════════════════════════════════════════════════════════════════
 
+#[allow(dead_code)]
 pub async fn get_pending_reviews_count(
     State(state): State<AppState>,
 ) -> ApiResult<Json<serde_json::Value>> {

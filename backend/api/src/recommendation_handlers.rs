@@ -56,6 +56,7 @@ struct RecommendationCandidateRow {
     description: Option<String>,
     network: Network,
     category: Option<String>,
+    #[allow(dead_code)]
     tags: Vec<String>,
     popularity: i64,
     similarity_score: f64,

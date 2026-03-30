@@ -50,8 +50,11 @@ use crate::error::ApiError;
 const DEFAULT_ANON_LIMIT_PER_MINUTE: u32 = 100;
 const DEFAULT_AUTH_LIMIT_PER_MINUTE: u32 = 1_000;
 const DEFAULT_WINDOW_SECONDS: u64 = 60;
+#[allow(dead_code)]
 const DEFAULT_CONTRACTS_PAGE_SIZE: u32 = 50;
+#[allow(dead_code)]
 const MAX_CONTRACTS_PAGE_SIZE: u32 = 1000;
+#[allow(dead_code)]
 const ENDPOINT_LIMIT_ENV_PREFIX: &str = "RATE_LIMIT_ENDPOINT_";
 
 /// How often the background task sweeps for expired buckets.
@@ -346,6 +349,7 @@ fn parse_ip_addr(raw: &str) -> Option<IpAddr> {
         .or_else(|| raw.parse::<SocketAddr>().ok().map(|addr| addr.ip()))
 }
 
+#[allow(dead_code)]
 fn is_write_method(method: &Method) -> bool {
     matches!(
         *method,
@@ -353,6 +357,7 @@ fn is_write_method(method: &Method) -> bool {
     )
 }
 
+#[allow(dead_code)]
 fn contracts_page_size_rate_limit(method: &Method, path: &str, query: Option<&str>) -> Option<u32> {
     if *method != Method::GET || path != "/api/contracts" {
         return None;
@@ -361,6 +366,7 @@ fn contracts_page_size_rate_limit(method: &Method, path: &str, query: Option<&st
     Some(extract_page_size(query).unwrap_or(DEFAULT_CONTRACTS_PAGE_SIZE))
 }
 
+#[allow(dead_code)]
 fn extract_page_size(query: Option<&str>) -> Option<u32> {
     let query = query?;
 
@@ -379,11 +385,13 @@ fn extract_page_size(query: Option<&str>) -> Option<u32> {
     None
 }
 
+#[allow(dead_code)]
 fn scale_limit_by_page_size(base_limit: u32, page_size: u32) -> u32 {
     let weight = page_size.div_ceil(DEFAULT_CONTRACTS_PAGE_SIZE).max(1);
     (base_limit / weight).max(1)
 }
 
+#[allow(dead_code)]
 fn endpoint_key(method: &Method, path: &str) -> String {
     let normalized_path = path
         .chars()
@@ -713,7 +721,7 @@ mod tests {
 
     #[tokio::test]
     async fn contracts_rate_limit_scales_down_for_large_page_sizes() {
-        let app = test_app(100, 20, 10_000, Duration::from_secs(60));
+        let app = test_app(100, 20, Duration::from_secs(60));
         let ip = "198.51.100.77";
 
         for _ in 0..5 {

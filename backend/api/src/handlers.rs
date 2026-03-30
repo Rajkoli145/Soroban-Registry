@@ -85,6 +85,7 @@ fn map_query_rejection(err: QueryRejection) -> ApiError {
     )
 }
 
+#[allow(dead_code)]
 fn sort_timestamp_column(sort_by: &shared::SortBy) -> Option<&'static str> {
     match sort_by {
         shared::SortBy::CreatedAt => Some("c.created_at"),
@@ -531,7 +532,7 @@ fn parse_batch_fields(raw_fields: Option<&str>) -> Option<HashSet<String>> {
 
 fn contract_to_filtered_value(contract: &Contract, fields: Option<&HashSet<String>>) -> Value {
     if fields.is_none() {
-        return serde_json::to_value(contract).unwrap_or_else(|_| Value::Null);
+        return serde_json::to_value(contract).unwrap_or(Value::Null);
     }
 
     let Some(source) = serde_json::to_value(contract)
@@ -1602,42 +1603,42 @@ fn apply_contract_export_filters<'a>(
         query.push(")");
     }
 
-    if let Some(created_from) = filters.created_from.clone() {
+    if let Some(created_from) = filters.created_from {
         query.push(" AND c.created_at >= ");
         query.push_bind(created_from);
     }
 
-    if let Some(created_to) = filters.created_to.clone() {
+    if let Some(created_to) = filters.created_to {
         query.push(" AND c.created_at <= ");
         query.push_bind(created_to);
     }
 
-    if let Some(updated_from) = filters.updated_from.clone() {
+    if let Some(updated_from) = filters.updated_from {
         query.push(" AND c.updated_at >= ");
         query.push_bind(updated_from);
     }
 
-    if let Some(updated_to) = filters.updated_to.clone() {
+    if let Some(updated_to) = filters.updated_to {
         query.push(" AND c.updated_at <= ");
         query.push_bind(updated_to);
     }
 
-    if let Some(verified_from) = filters.verified_from.clone() {
+    if let Some(verified_from) = filters.verified_from {
         query.push(" AND c.verified_at >= ");
         query.push_bind(verified_from);
     }
 
-    if let Some(verified_to) = filters.verified_to.clone() {
+    if let Some(verified_to) = filters.verified_to {
         query.push(" AND c.verified_at <= ");
         query.push_bind(verified_to);
     }
 
-    if let Some(last_accessed_from) = filters.last_accessed_from.clone() {
+    if let Some(last_accessed_from) = filters.last_accessed_from {
         query.push(" AND c.last_accessed_at >= ");
         query.push_bind(last_accessed_from);
     }
 
-    if let Some(last_accessed_to) = filters.last_accessed_to.clone() {
+    if let Some(last_accessed_to) = filters.last_accessed_to {
         query.push(" AND c.last_accessed_at <= ");
         query.push_bind(last_accessed_to);
     }
@@ -3744,6 +3745,7 @@ pub async fn get_trust_score() -> impl IntoResponse {
     planned_not_implemented_response()
 }
 
+#[allow(dead_code)]
 #[utoipa::path(
     get,
     path = "/api/contracts/{id}/dependencies",
@@ -5012,6 +5014,7 @@ pub async fn deploy_green() -> impl IntoResponse {
     planned_not_implemented_response()
 }
 
+#[allow(dead_code)]
 #[utoipa::path(
     get,
     path = "/api/contracts/{id}/performance",
@@ -5419,7 +5422,9 @@ mod tests {
             .unwrap();
         let registry = Registry::new();
         let (job_engine, _rx) = soroban_batch::engine::JobEngine::new();
-        let state = AppState::new(db, registry, Arc::new(job_engine), is_shutting_down);
+        let state = AppState::new(db, registry, Arc::new(job_engine), is_shutting_down)
+            .await
+            .unwrap();
 
         let (status, json) = health_check(State(state)).await;
 
@@ -5487,6 +5492,10 @@ mod tests {
             is_maintenance: false,
             logical_id: None,
             network_configs: None,
+            organization_id: None,
+            relevance_score: None,
+            visibility: shared::VisibilityType::Public,
+            current_version: None,
         };
 
         assert_eq!(
@@ -5665,6 +5674,7 @@ mod tests {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Advanced contract search using a recursive Query DSL
+#[allow(dead_code)]
 #[utoipa::path(
     post,
     path = "/api/contracts/search",
@@ -5756,6 +5766,7 @@ pub async fn advanced_search_contracts(
     Ok(Json(PaginatedResponse::new(contracts, total, page, limit)))
 }
 
+#[allow(dead_code)]
 fn build_where_clause<'a>(
     builder: &mut sqlx::QueryBuilder<'a, sqlx::Postgres>,
     node: &'a QueryNode,
@@ -5797,6 +5808,7 @@ fn build_where_clause<'a>(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn apply_condition<'a>(
     builder: &mut sqlx::QueryBuilder<'a, sqlx::Postgres>,
     cond: &'a QueryCondition,

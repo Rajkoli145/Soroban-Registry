@@ -252,10 +252,10 @@ pub async fn report_incident(
          VALUES ($1, $2, $3, $4, $5, $6) \
          RETURNING *",
     )
-    .bind(&req.title.trim())
-    .bind(&req.description.trim())
+    .bind(req.title.trim())
+    .bind(req.description.trim())
     .bind(&req.severity)
-    .bind(&req.reporter.trim())
+    .bind(req.reporter.trim())
     .bind(&req.assigned_to)
     .bind(&req.cve_id)
     .fetch_one(&mut *tx)
@@ -281,7 +281,7 @@ pub async fn report_incident(
          VALUES ($1, $2, $3, $4)",
     )
     .bind(incident.id)
-    .bind(&req.reporter.trim())
+    .bind(req.reporter.trim())
     .bind("Incident reported.")
     .bind(IncidentStatus::Reported)
     .execute(&mut *tx)
@@ -451,8 +451,8 @@ pub async fn update_incident_status(
          VALUES ($1, $2, $3, $4)",
     )
     .bind(id)
-    .bind(&req.author.trim())
-    .bind(&req.message.trim())
+    .bind(req.author.trim())
+    .bind(req.message.trim())
     .bind(&req.status)
     .execute(&mut *tx)
     .await
@@ -495,8 +495,8 @@ pub async fn add_incident_update(
          RETURNING *",
     )
     .bind(id)
-    .bind(&req.author.trim())
-    .bind(&req.message.trim())
+    .bind(req.author.trim())
+    .bind(req.message.trim())
     .fetch_one(&state.db)
     .await
     .map_err(|e| ApiError::internal(format!("insert update: {}", e)))?;
@@ -570,10 +570,10 @@ pub async fn publish_advisory(
          VALUES ($1, $2, $3, $4, $5, $6, $7) \
          RETURNING *",
     )
-    .bind(&req.incident_id)
-    .bind(&req.title.trim())
-    .bind(&req.summary.trim())
-    .bind(&req.details.trim())
+    .bind(req.incident_id)
+    .bind(req.title.trim())
+    .bind(req.summary.trim())
+    .bind(req.details.trim())
     .bind(&req.severity)
     .bind(&req.affected_versions)
     .bind(&req.mitigation)

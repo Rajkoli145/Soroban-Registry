@@ -178,7 +178,7 @@ fn build_patch(from: Option<&VersionSnapshot>, to: &VersionSnapshot) -> Value {
                 "removed":  [],
                 "modified": []
             });
-            return json!({ "fields": fields, "abi_changes": abi_changes });
+            json!({ "fields": fields, "abi_changes": abi_changes })
         }
         Some(prev) => {
             if prev.wasm_hash != to.wasm_hash {

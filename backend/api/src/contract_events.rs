@@ -267,6 +267,7 @@ impl SubscriptionFilter {
         None
     }
 
+    #[allow(dead_code)]
     fn matches(&self, event: &ContractEventEnvelope) -> bool {
         if !self.contract_ids.is_empty() {
             let contract_uuid = event.contract.id.to_string().to_ascii_lowercase();
@@ -344,9 +345,8 @@ enum ServerMessage {
         subscriptions: SubscriptionSnapshot,
         warning: Option<String>,
     },
-    Event {
-        event: Arc<ContractEventEnvelope>,
-    },
+    #[allow(dead_code)]
+    Event { event: Arc<ContractEventEnvelope> },
     Heartbeat {
         timestamp: chrono::DateTime<chrono::Utc>,
         reconnect_after_ms: u64,
@@ -355,6 +355,7 @@ enum ServerMessage {
         message: String,
         reconnect_after_ms: u64,
     },
+    #[allow(dead_code)]
     ResyncRequired {
         dropped_events: u64,
         reconnect_after_ms: u64,
@@ -515,7 +516,7 @@ async fn handle_socket(
                 if send_json(&mut sender, &msg).await.is_err() {
                     break;
                 }
-                if sender.send(Message::Ping(Vec::new().into())).await.is_err() {
+                if sender.send(Message::Ping(Vec::new())).await.is_err() {
                     break;
                 }
             }
@@ -575,7 +576,7 @@ async fn send_json(
 ) -> Result<(), axum::Error> {
     let payload =
         serde_json::to_string(message).expect("server websocket messages should always serialize");
-    sender.send(Message::Text(payload.into())).await
+    sender.send(Message::Text(payload)).await
 }
 
 #[cfg(test)]
