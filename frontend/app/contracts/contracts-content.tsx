@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, ContractSearchParams, Contract } from '@/lib/api';
 import ContractCard from '@/components/ContractCard';
 import ContractCardSkeleton from '@/components/ContractCardSkeleton';
+import { ContractsTable } from '@/components/contracts/ContractsTable';
 import { ActiveFilters } from '@/components/contracts/ActiveFilters';
 import { FilterPanel } from '@/components/contracts/FilterPanel';
 import { ResultsCount } from '@/components/contracts/ResultsCount';
@@ -692,7 +693,15 @@ export function ContractsContent() {
               </div>
             ) : data && data.items.length > 0 ? (
               <>
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+                <div className="hidden md:block mb-8">
+                  <ContractsTable
+                    data={data.items}
+                    sortBy={filters.sort_by || 'created_at'}
+                    sortOrder={filters.sort_order || 'desc'}
+                    onSortChange={(by, order) => setFilters(current => ({ ...current, sort_by: by as any, sort_order: order, page: 1 }))}
+                  />
+                </div>
+                <div className="grid md:hidden grid-cols-1 gap-6 mb-8">
                   {data.items.map((contract: Contract) => (
                     <ContractCard key={contract.id} contract={contract} />
                   ))}
