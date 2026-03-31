@@ -1082,9 +1082,9 @@ export const api = {
     );
   },
 
-  // Compatibility endpoints
-  async getCompatibility(id: string): Promise<CompatibilityMatrix> {
-    return handleApiCall<CompatibilityMatrix>(
+  // Interoperability analysis endpoint
+  async getCompatibility(id: string): Promise<ContractInteroperabilityResponse> {
+    return handleApiCall<ContractInteroperabilityResponse>(
       () => fetch(`${API_URL}/api/contracts/${id}/compatibility`),
       `/api/contracts/${id}/compatibility`
     );
@@ -1498,6 +1498,68 @@ export interface ExampleRating {
   created_at: string;
 }
 
+export type ProtocolComplianceStatus = 'compliant' | 'partial' | 'unsupported';
+
+export type InteroperabilityCapabilityKind = 'bridge' | 'adapter';
+
+export interface InteroperabilityProtocolMatch {
+  slug: string;
+  name: string;
+  description: string;
+  status: ProtocolComplianceStatus;
+  matched_functions: string[];
+  missing_functions: string[];
+  optional_matches: string[];
+  compliance_score: number;
+}
+
+export interface InteroperabilityCapability {
+  kind: InteroperabilityCapabilityKind;
+  label: string;
+  confidence: number;
+  evidence: string[];
+}
+
+export interface InteroperabilitySuggestion {
+  contract_id: string;
+  contract_address: string;
+  contract_name: string;
+  network: Network;
+  category?: string;
+  is_verified: boolean;
+  score: number;
+  reason: string;
+  shared_protocols: string[];
+  shared_functions: string[];
+  relation_types: string[];
+}
+
+export interface InteroperabilitySummary {
+  protocol_matches: number;
+  compatible_contracts: number;
+  suggested_contracts: number;
+  graph_nodes: number;
+  graph_edges: number;
+  bridge_signals: number;
+  adapter_signals: number;
+}
+
+export interface ContractInteroperabilityResponse {
+  contract_id: string;
+  contract_address: string;
+  contract_name: string;
+  network: Network;
+  analyzed_at: string;
+  has_abi: boolean;
+  analyzed_functions: string[];
+  warnings: string[];
+  protocols: InteroperabilityProtocolMatch[];
+  capabilities: InteroperabilityCapability[];
+  suggestions: InteroperabilitySuggestion[];
+  graph: GraphResponse;
+  summary: InteroperabilitySummary;
+}
+
 // ─── Compatibility Matrix ────────────────────────────────────────────────────
 
 export interface CompatibilityEntry {
@@ -1509,7 +1571,7 @@ export interface CompatibilityEntry {
   is_compatible: boolean;
 }
 
-/** Shape returned by GET /api/contracts/:id/compatibility */
+/** Legacy compatibility matrix shape retained for matrix/export workflows. */
 export interface CompatibilityMatrix {
   contract_id: string;
   /** Keyed by source version string */

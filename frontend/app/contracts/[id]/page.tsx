@@ -25,8 +25,10 @@ import {
   Code2,
   Layers,
   MessageSquare,
+  GitCompare,
   Share2,
 } from "lucide-react";
+
 import Link from "next/link";
 import { useCopy } from "@/hooks/useCopy";
 import CodeCopyButton from "@/components/CodeCopyButton";
@@ -428,7 +430,13 @@ function ContractDetailsContent() {
           </div>
 
           <div className="flex gap-2">
-            {/* Publisher actions/links could go here */}
+            <Link
+              href={`/contracts/${id}/compatibility`}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <GitCompare className="h-4 w-4" />
+              Interoperability
+            </Link>
           </div>
         </div>
 
