@@ -7,6 +7,7 @@ use serde_json::json;
 use serde_yaml;
 use std::fmt;
 use std::fs;
+use std::process::Command;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -478,7 +479,23 @@ pub async fn publish(
     tags: Vec<String>,
     publisher: &str,
     is_cicd: bool,
+    contract_path: &str,
+    test_command: Option<&str>,
+    require_coverage: bool,
+    coverage_threshold: f64,
+    skip_tests: bool,
 ) -> Result<()> {
+    if !skip_tests {
+        run_contract_tests(
+            contract_path,
+            test_command,
+            require_coverage,
+            coverage_threshold,
+            true,
+        )
+        .await?;
+    }
+
     let client = reqwest::Client::new();
     let url = format!("{}/api/contracts", api_url);
 
@@ -531,6 +548,261 @@ pub async fn publish(
     println!();
 
     Ok(())
+}
+
+pub async fn list(api_url: &str, limit: usize, network: Network, json: bool) -> Result<()> {
+fn detect_test_command(contract_dir: &Path) -> Option<String> {
+    if contract_dir.join("Cargo.toml").exists() {
+        return Some("cargo test".to_string());
+    }
+
+    if contract_dir.join("package.json").exists() {
+        if contract_dir.join("pnpm-lock.yaml").exists() {
+            return Some("pnpm test".to_string());
+        }
+        if contract_dir.join("yarn.lock").exists() {
+            return Some("yarn test".to_string());
+        }
+        return Some("npm test".to_string());
+    }
+
+    None
+}
+
+fn summarize_failure(stdout: &str, stderr: &str) -> Vec<String> {
+    let mut suggestions = Vec::new();
+    let combined = format!("{}\n{}", stdout, stderr).to_lowercase();
+
+    if combined.contains("failed") || combined.contains("panic") {
+        suggestions.push("Review failing test output and fix assertions or runtime errors.".to_string());
+    }
+    if combined.contains("not found") || combined.contains("no such file") {
+        suggestions.push("Check file paths and project setup before running tests.".to_string());
+    }
+    if combined.contains("permission") {
+        suggestions.push("Verify file permissions and execution rights for test tools.".to_string());
+    }
+
+    if suggestions.is_empty() {
+        suggestions.push("Inspect test logs above for the first concrete error and address it first.".to_string());
+    }
+
+    suggestions
+}
+
+fn parse_tarpaulin_percent(report: &serde_json::Value) -> Option<f64> {
+    let files = report.get("files")?.as_array()?;
+
+    let mut covered_lines: u64 = 0;
+    let mut coverable_lines: u64 = 0;
+
+    for file in files {
+        if let Some(traces) = file.get("traces").and_then(|t| t.as_array()) {
+            for trace in traces {
+                if trace.get("line").and_then(|l| l.as_u64()).is_some() {
+                    coverable_lines += 1;
+                    if let Some(stats) = trace.get("stats").and_then(|s| s.as_object()) {
+                        if stats.values().any(|v| v.as_u64().unwrap_or(0) > 0) {
+                            covered_lines += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if coverable_lines == 0 {
+        None
+    } else {
+        Some((covered_lines as f64 / coverable_lines as f64) * 100.0)
+    }
+}
+
+fn run_rust_coverage(contract_dir: &Path) -> Result<Option<f64>> {
+    let output_dir = contract_dir.join(".soroban-registry").join("coverage");
+    if !output_dir.exists() {
+        fs::create_dir_all(&output_dir)
+            .with_context(|| format!("Failed to create coverage output dir: {}", output_dir.display()))?;
+    }
+
+    let output_dir_str = output_dir.to_string_lossy().to_string();
+    let status = Command::new("cargo")
+        .current_dir(contract_dir)
+        .args([
+            "tarpaulin",
+            "--out",
+            "Json",
+            "--output-dir",
+            &output_dir_str,
+            "--branch",
+        ])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            let report_path = output_dir.join("tarpaulin-report.json");
+            if !report_path.exists() {
+                return Ok(None);
+            }
+
+            let content = fs::read_to_string(&report_path)
+                .with_context(|| format!("Failed reading coverage report: {}", report_path.display()))?;
+            let json: serde_json::Value = serde_json::from_str(&content)
+                .with_context(|| format!("Failed parsing coverage report: {}", report_path.display()))?;
+            Ok(parse_tarpaulin_percent(&json))
+        }
+        _ => Ok(None),
+    }
+}
+
+pub async fn run_contract_tests(
+    contract_path: &str,
+    test_command: Option<&str>,
+    require_coverage: bool,
+    coverage_threshold: f64,
+    show_coverage: bool,
+) -> Result<()> {
+    let contract_dir = Path::new(contract_path);
+    if !contract_dir.exists() {
+        anyhow::bail!("Contract path not found: {}", contract_path);
+    }
+
+    let selected_command = if let Some(cmd) = test_command {
+        cmd.to_string()
+    } else if let Some(cmd) = detect_test_command(contract_dir) {
+        cmd
+    } else {
+        anyhow::bail!(
+            "No tests detected. Provide a custom command with --test-command, e.g. --test-command 'cargo test'"
+        );
+    };
+
+    println!("\n{}", "Running Contract Tests...".bold().cyan());
+    println!("{}", "=".repeat(80).cyan());
+    println!("{} {}", "Command:".bold(), selected_command.bright_blue());
+
+    let start = std::time::Instant::now();
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(&selected_command)
+        .current_dir(contract_dir)
+        .output()
+        .with_context(|| format!("Failed to execute test command: {}", selected_command))?;
+
+    let duration = start.elapsed().as_secs_f64();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        println!("{} Tests passed in {:.2}s", "✓".green(), duration);
+    } else {
+        println!("{} Tests failed in {:.2}s", "✗".red(), duration);
+
+        if !stdout.trim().is_empty() {
+            println!("\n{}\n{}", "Test output:".bold(), stdout);
+        }
+        if !stderr.trim().is_empty() {
+            println!("\n{}\n{}", "Test errors:".bold().red(), stderr);
+        }
+
+        println!("\n{}", "Suggested actions:".bold().yellow());
+        for suggestion in summarize_failure(&stdout, &stderr) {
+            println!("  - {}", suggestion);
+        }
+
+        anyhow::bail!("Contract tests failed. Submission blocked.");
+    }
+
+    let is_rust_project = contract_dir.join("Cargo.toml").exists();
+    let should_collect_coverage = show_coverage || require_coverage || coverage_threshold > 0.0;
+
+    if should_collect_coverage {
+        println!("\n{}", "Coverage:".bold().magenta());
+        let coverage = if is_rust_project {
+            run_rust_coverage(contract_dir)?
+        } else {
+            None
+        };
+
+        if let Some(percent) = coverage {
+            println!("  Total Coverage: {:.2}%", percent);
+
+            if coverage_threshold > 0.0 {
+                if percent < coverage_threshold {
+                    anyhow::bail!(
+                        "Coverage {:.2}% is below required threshold {:.2}%",
+                        percent,
+                        coverage_threshold
+                    );
+                } else {
+                    println!(
+                        "  {} Threshold met ({:.2}% >= {:.2}%)",
+                        "✓".green(),
+                        percent,
+                        coverage_threshold
+                    );
+                }
+            }
+        } else {
+            println!("  {} Coverage metrics unavailable.", "⚠".yellow());
+            if require_coverage {
+                anyhow::bail!(
+                    "Coverage is required but could not be collected. Install cargo-tarpaulin or provide coverage-enabled test tooling."
+                );
+            }
+        }
+    }
+
+    println!("\n{}", "=".repeat(80).cyan());
+    println!();
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod contract_test_helpers_tests {
+    use super::{detect_test_command, parse_tarpaulin_percent};
+    use serde_json::json;
+
+    #[test]
+    fn detect_test_command_prefers_cargo_when_cargo_toml_exists() {
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname='x'\nversion='0.1.0'")
+            .expect("Cargo.toml should be created");
+
+        let detected = detect_test_command(dir.path());
+        assert_eq!(detected.as_deref(), Some("cargo test"));
+    }
+
+    #[test]
+    fn detect_test_command_uses_pnpm_for_node_projects() {
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        std::fs::write(dir.path().join("package.json"), "{}")
+            .expect("package.json should be created");
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "lockfileVersion: '9.0'")
+            .expect("pnpm-lock.yaml should be created");
+
+        let detected = detect_test_command(dir.path());
+        assert_eq!(detected.as_deref(), Some("pnpm test"));
+    }
+
+    #[test]
+    fn parse_tarpaulin_percent_calculates_expected_ratio() {
+        let report = json!({
+            "files": [
+                {
+                    "traces": [
+                        {"line": 1, "stats": {"line": 1}},
+                        {"line": 2, "stats": {"line": 0}},
+                        {"line": 3, "stats": {"line": 2}}
+                    ]
+                }
+            ]
+        });
+
+        let percent = parse_tarpaulin_percent(&report).expect("coverage should parse");
+        assert!((percent - 66.666).abs() < 0.5);
+    }
 }
 
 pub async fn list(api_url: &str, limit: usize, network: Network, json: bool) -> Result<()> {
@@ -1674,12 +1946,10 @@ pub async fn scan_deps(
 
 #[cfg(test)]
 mod flamegraph_and_network_tests {
-    mod tests_network {
-        use super::super::{generate_flame_graph_file, profile, Network};
-        use crate::profiler;
-        use std::collections::HashMap;
-        use std::fs;
-        use std::time::Duration;
+    use super::*;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::time::Duration;
 
         fn sample_profile() -> profiler::ProfileData {
             let mut functions = HashMap::new();
@@ -1851,7 +2121,6 @@ mod flamegraph_and_network_tests {
                 "unexpected error: {err}"
             );
         }
-    }
 }
 /// Validate a contract function call for type safety
 pub async fn validate_call(
@@ -2134,7 +2403,10 @@ pub async fn info(
         .await?;
 
     if !metadata_res.status().is_success() {
-        anyhow::bail!("Failed to fetch contract metadata: {}", metadata_res.status());
+        anyhow::bail!(
+            "Failed to fetch contract metadata: {}",
+            metadata_res.status()
+        );
     }
     let metadata: serde_json::Value = metadata_res.json().await?;
 
@@ -2142,16 +2414,17 @@ pub async fn info(
     let contract_uuid = metadata["contract"]["id"]
         .as_str()
         .context("Metadata missing contract ID")?;
-    let contract_address = metadata["contract"]["contract_id"]
-        .as_str()
-        .unwrap_or(id);
+    let contract_address = metadata["contract"]["contract_id"].as_str().unwrap_or(id);
 
     // 2. Fetch ABI
     let abi_url = format!("{}/api/contracts/{}/abi", base_url, contract_uuid);
     let abi_res = client.get(&abi_url).send().await;
     let abi: Option<serde_json::Value> = if let Ok(res) = abi_res {
         if res.status().is_success() {
-            res.json::<serde_json::Value>().await.ok().and_then(|v| v.get("abi").cloned())
+            res.json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|v| v.get("abi").cloned())
         } else {
             None
         }
@@ -2177,7 +2450,9 @@ pub async fn info(
     let deps_res = client.get(&deps_url).send().await;
     let dependencies: Vec<serde_json::Value> = if let Ok(res) = deps_res {
         if res.status().is_success() {
-            res.json::<serde_json::Value>().await.ok()
+            res.json::<serde_json::Value>()
+                .await
+                .ok()
                 .and_then(|v| v.get("dependencies").cloned())
                 .and_then(|v| v.as_array().cloned())
                 .unwrap_or_default()
@@ -2193,7 +2468,9 @@ pub async fn info(
     let relate_res = client.get(&relate_url).send().await;
     let dependents: Vec<serde_json::Value> = if let Ok(res) = relate_res {
         if res.status().is_success() {
-            res.json::<serde_json::Value>().await.ok()
+            res.json::<serde_json::Value>()
+                .await
+                .ok()
                 .and_then(|v| v.get("dependents").cloned())
                 .and_then(|v| v.as_array().cloned())
                 .unwrap_or_default()
@@ -2242,7 +2519,7 @@ pub async fn info(
                 &full_info,
                 highlight_method,
                 contract_address,
-                &network.to_string()
+                &network.to_string(),
             )?;
         }
     }
@@ -2258,14 +2535,24 @@ fn render_info_text(
 ) -> Result<()> {
     let metadata = &info["metadata"];
     let name = metadata["name"].as_str().unwrap_or("Unknown");
-    let desc = metadata["description"].as_str().unwrap_or("No description provided.");
+    let desc = metadata["description"]
+        .as_str()
+        .unwrap_or("No description provided.");
     let is_verified = metadata["is_verified"].as_bool().unwrap_or(false);
     let health_score = metadata["health_score"].as_i64().unwrap_or(0);
 
     println!("\n{}", "=".repeat(80).cyan());
     println!("{} {}", "CONTRACT:".bold(), name.bold().green());
     println!("{} {}", "ID:      ".bold(), contract_address.yellow());
-    println!("{} {}", "STATUS:  ".bold(), if is_verified { "Verified".green().bold() } else { "Unverified".red() });
+    println!(
+        "{} {}",
+        "STATUS:  ".bold(),
+        if is_verified {
+            "Verified".green().bold()
+        } else {
+            "Unverified".red()
+        }
+    );
     println!("{} {}/100", "HEALTH:  ".bold(), health_score);
     println!("{} {}", "DESC:    ".bold(), desc);
     println!("{}", "=".repeat(80).cyan());
@@ -2273,9 +2560,18 @@ fn render_info_text(
     // Explorer Links
     println!("\n{}", "BLOCK EXPLORERS:".bold().underline());
     let explorer_url = match network_str {
-        "testnet" => format!("https://stellar.expert/explorer/testnet/contract/{}", contract_address),
-        "futurenet" => format!("https://stellar.expert/explorer/futurenet/contract/{}", contract_address),
-        _ => format!("https://stellar.expert/explorer/public/contract/{}", contract_address),
+        "testnet" => format!(
+            "https://stellar.expert/explorer/testnet/contract/{}",
+            contract_address
+        ),
+        "futurenet" => format!(
+            "https://stellar.expert/explorer/futurenet/contract/{}",
+            contract_address
+        ),
+        _ => format!(
+            "https://stellar.expert/explorer/public/contract/{}",
+            contract_address
+        ),
     };
     println!("  • StellarExpert: {}", explorer_url.blue().underline());
 
@@ -2327,8 +2623,8 @@ fn render_info_text(
             println!("\n{}", "RELATED CONTRACTS (DEPENDENTS):".bold().underline());
             for d in deps {
                 let d_name = d["dependency_name"].as_str().unwrap_or("unknown"); // This is from the perspective of the dependent
-                // Wait, it should use the contract name if available.
-                // But dependents might just be a list of contract IDs.
+                                                                                 // Wait, it should use the contract name if available.
+                                                                                 // But dependents might just be a list of contract IDs.
                 println!("  • Contract ID: {}", d["contract_id"]);
             }
         }

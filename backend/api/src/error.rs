@@ -6,7 +6,6 @@ use axum::{
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -38,6 +37,12 @@ impl ErrorCode {
     }
 }
 
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug)]
 pub struct ApiError {
     status: StatusCode,
@@ -58,6 +63,7 @@ struct ErrorResponse {
     message: String,
     details: Value,
     timestamp: String,
+    correlation_id: String,
 }
 
 impl ApiError {
@@ -100,6 +106,10 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "FORBIDDEN", message)
     }
 
+    pub fn forbidden_with_error(error: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, error, message)
+    }
+
     pub fn rate_limited(message: impl Into<String>) -> Self {
         Self::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", message)
     }
@@ -126,6 +136,7 @@ impl IntoResponse for ApiError {
             message: self.message,
             details: self.details.unwrap_or_else(|| json!({})),
             timestamp: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+            correlation_id: correlation_id.clone(),
         };
 
         let mut response = (self.status, Json(payload)).into_response();
@@ -141,6 +152,24 @@ impl From<sqlx::Error> for ApiError {
     fn from(e: sqlx::Error) -> Self {
         tracing::error!(err = %e, "database error");
         ApiError::internal("Database error")
+    }
+}
+
+impl From<StatusCode> for ApiError {
+    fn from(status: StatusCode) -> Self {
+        Self::new(status, format!("{}", ErrorCode::from_status(status)), status.canonical_reason().unwrap_or("Unknown Error"))
+    }
+}
+
+impl From<String> for ApiError {
+    fn from(message: String) -> Self {
+        Self::internal(message)
+    }
+}
+
+impl From<&str> for ApiError {
+    fn from(message: &str) -> Self {
+        Self::internal(message)
     }
 }
 

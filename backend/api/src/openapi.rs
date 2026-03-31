@@ -2,9 +2,10 @@ use crate::breaking_changes;
 use crate::custom_metrics_handlers;
 use crate::deprecation_handlers;
 use crate::handlers;
+use crate::interoperability_handlers;
 use crate::metrics_handler;
+use crate::recommendation_handlers;
 use crate::similarity_handlers;
-use serde_json::Value;
 use shared::models::*;
 use utoipa::OpenApi;
 
@@ -14,6 +15,8 @@ use utoipa::OpenApi;
         handlers::health_check,
         handlers::get_stats,
         handlers::list_contracts,
+        handlers::export_contract_metadata,
+        handlers::get_contract_export_status,
         handlers::get_contracts_batch,
         handlers::get_contract,
         handlers::get_contract_versions,
@@ -29,12 +32,13 @@ use utoipa::OpenApi;
         handlers::get_contract_abi,
         handlers::get_contract_openapi_yaml,
         handlers::get_contract_openapi_json,
-        handlers::get_contract_analytics,
+        crate::analytics_handlers::get_contract_analytics,
         handlers::get_contract_dependencies,
         handlers::get_contract_dependents,
         handlers::get_contract_graph,
         handlers::get_impact_analysis,
         handlers::get_trending_contracts,
+        recommendation_handlers::get_contract_recommendations,
         similarity_handlers::get_similar_contracts,
         similarity_handlers::analyze_contract_similarity_batch,
         handlers::verify_contract,
@@ -58,11 +62,20 @@ use utoipa::OpenApi;
         custom_metrics_handlers::record_metrics_batch,
         deprecation_handlers::get_deprecation_info,
         deprecation_handlers::deprecate_contract,
+        interoperability_handlers::get_contract_interoperability,
         metrics_handler::metrics_endpoint,
     ),
     components(
         schemas(
             Contract,
+            ContractExportFormat,
+            ContractExportRequest,
+            ContractExportMetadata,
+            ContractMetadataExportRecord,
+            ContractMetadataExportEnvelope,
+            ContractExportJobStatus,
+            ContractExportAcceptedResponse,
+            ContractExportStatusResponse,
             ContractGetResponse,
             NetworkConfig,
             Network,
@@ -76,11 +89,18 @@ use utoipa::OpenApi;
             GraphNode,
             GraphEdge,
             GraphResponse,
+            ProtocolComplianceStatus,
+            InteroperabilityCapabilityKind,
+            InteroperabilityProtocolMatch,
+            InteroperabilityCapability,
+            InteroperabilitySuggestion,
+            InteroperabilitySummary,
+            ContractInteroperabilityResponse,
             PublishRequest,
             MigrationScript,
             DeploymentEnvironment,
             CanaryRelease,
-            ABTest,
+            AbTest,
             ContractSimilaritySignature,
             ContractSimilarityReport,
             SimilarityMatchType,
@@ -97,7 +117,6 @@ use utoipa::OpenApi;
             ContractInteraction,
             ContractDependency,
             ImpactAnalysisResponse,
-            VerifyRequest,
             ContractAnalyticsResponse,
             DeploymentStats,
             InteractorStats,
@@ -117,18 +136,32 @@ use utoipa::OpenApi;
             CreateInteractionRequest,
             CreateInteractionBatchRequest,
             crate::auth_handlers::ChallengeResponse,
-            crate::auth_handlers::VerifyRequest as AuthVerifyRequest,
+            crate::auth_handlers::VerifyRequest,
             crate::auth_handlers::VerifyResponse,
             breaking_changes::ChangeSeverity,
             breaking_changes::BreakingChange,
             breaking_changes::BreakingChangeReport,
             ContractChangelogEntry,
             ContractChangelogResponse,
+            RecommendationReason,
+            RecommendedContract,
+            ContractRecommendationsResponse,
             custom_metrics_handlers::MetricSeriesResponse,
             custom_metrics_handlers::MetricSeriesPoint,
             custom_metrics_handlers::MetricSampleResponse,
             custom_metrics_handlers::MetricSample,
             custom_metrics_handlers::MetricCatalogEntry,
+            // Review system
+            ReviewResponse,
+            ReviewStatus,
+            ReviewSortBy,
+            CreateReviewRequest,
+            ReviewVoteRequest,
+            ReviewVoteResponse,
+            FlagReviewRequest,
+            ModerateReviewRequest,
+            ContractRatingStats,
+            RatingDistribution,
         )
     ),
     tags(
@@ -147,6 +180,7 @@ use utoipa::OpenApi;
         (name = "Deployments", description = "Deployment management"),
         (name = "Versions", description = "Contract version history and management"),
         (name = "Security", description = "Security and trust score assessments"),
+        (name = "Reviews", description = "Contract reviews and ratings"),
     ),
     modifiers(&SecurityAddon)
 )]

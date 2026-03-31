@@ -12,7 +12,6 @@ use axum::{
 use chrono::{SecondsFormat, Utc};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
-use uuid::Uuid;
 
 /// A field-level validation error
 #[derive(Debug, Clone, Serialize)]
@@ -37,6 +36,7 @@ pub struct ValidationErrorResponse {
     pub message: String,
     pub details: serde_json::Value,
     pub timestamp: String,
+    pub correlation_id: String,
 }
 
 impl ValidationErrorResponse {
@@ -53,10 +53,9 @@ impl ValidationErrorResponse {
             details: json!({
                 "reason": "VALIDATION_ERROR",
                 "field_errors": errors,
-                "correlation_id": Uuid::new_v4().to_string()
+                "correlation_id": correlation_id
             }),
             timestamp: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-            correlation_id,
         }
     }
 }
