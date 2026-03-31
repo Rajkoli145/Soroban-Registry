@@ -1,5 +1,6 @@
 #![allow(unused_variables)]
 
+mod analyze;
 mod backup;
 mod batch_register;
 mod batch_verify;
@@ -29,6 +30,7 @@ mod release_notes;
 mod sla;
 mod table_format;
 mod test_framework;
+mod track_deployment;
 mod webhook;
 mod wizard;
 mod shell;
@@ -132,6 +134,26 @@ pub enum Commands {
         /// Publisher Stellar address
         #[arg(long)]
         publisher: String,
+
+        /// Path to contract project directory for preflight testing
+        #[arg(long, default_value = ".")]
+        contract_path: String,
+
+        /// Custom test command to run before submission
+        #[arg(long)]
+        test_command: Option<String>,
+
+        /// Require coverage data and fail if unavailable
+        #[arg(long)]
+        require_coverage: bool,
+
+        /// Minimum required coverage percentage (0-100)
+        #[arg(long, default_value_t = 0.0)]
+        coverage_threshold: f64,
+
+        /// Skip pre-submission contract tests
+        #[arg(long)]
+        skip_tests: bool,
     },
 
     /// List recent contracts
@@ -320,12 +342,18 @@ pub enum Commands {
 
     /// Run integration tests
     Test {
-        /// Path to test file (YAML or JSON)
-        test_file: String,
+        /// Optional path to scenario test file (YAML or JSON)
+        ///
+        /// If omitted, auto-detects and runs contract project tests.
+        test_file: Option<String>,
 
         /// Path to contract directory or file
         #[arg(long)]
         contract_path: Option<String>,
+
+        /// Custom test command (for auto-detected project tests mode)
+        #[arg(long)]
+        test_command: Option<String>,
 
         /// Output JUnit XML report
         #[arg(long)]
@@ -338,6 +366,14 @@ pub enum Commands {
         /// Verbose output
         #[arg(long, short)]
         verbose: bool,
+
+        /// Require coverage data and fail if unavailable
+        #[arg(long)]
+        require_coverage: bool,
+
+        /// Minimum required coverage percentage (0-100)
+        #[arg(long, default_value_t = 0.0)]
+        coverage_threshold: f64,
     },
 
     /// SLA compliance monitoring
@@ -527,6 +563,24 @@ pub enum Commands {
         /// Output results as machine-readable JSON
         #[arg(long)]
         json: bool,
+    },
+
+    /// Run advanced analysis on a deployed contract (#530)
+    Analyze {
+        /// On-chain contract ID to analyse
+        contract_id: String,
+
+        /// Stellar network (mainnet | testnet | futurenet)
+        #[arg(long, default_value = "testnet")]
+        network: String,
+
+        /// Report format: text (default), json, yaml
+        #[arg(long, default_value = "text")]
+        report_format: String,
+
+        /// Write the report to a file instead of stdout
+        #[arg(long, short = 'o')]
+        output: Option<String>,
     },
 }
 
@@ -1160,6 +1214,11 @@ pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network:
             category,
             tags,
             publisher,
+            contract_path,
+            test_command,
+            require_coverage,
+            coverage_threshold,
+            skip_tests,
         } => {
             let tags_vec = tags
                 .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
@@ -1180,6 +1239,11 @@ pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network:
                 tags_vec,
                 &publisher,
                 false,
+                &contract_path,
+                test_command.as_deref(),
+                require_coverage,
+                coverage_threshold,
+                skip_tests,
             )
             .await?;
         }
@@ -1515,18 +1579,32 @@ pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network:
         Commands::Test {
             test_file,
             contract_path,
+            test_command,
             junit,
             coverage,
             verbose,
+            require_coverage,
+            coverage_threshold,
         } => {
-            commands::run_tests(
-                &test_file,
-                contract_path.as_deref(),
-                junit.as_deref(),
-                coverage,
-                verbose,
-            )
-            .await?;
+            if let Some(test_file) = test_file {
+                commands::run_tests(
+                    &test_file,
+                    contract_path.as_deref(),
+                    junit.as_deref(),
+                    coverage,
+                    verbose,
+                )
+                .await?;
+            } else {
+                commands::run_contract_tests(
+                    contract_path.as_deref().unwrap_or("."),
+                    test_command.as_deref(),
+                    require_coverage,
+                    coverage_threshold,
+                    coverage,
+                )
+                .await?;
+            }
         }
         Commands::Sla { action } => match action {
             SlaCommands::Record {
@@ -1915,6 +1993,29 @@ pub async fn dispatch_command(cli: Cli, network: commands::Network, cfg_network:
                 network::status(json).await?;
             }
         },
+
+        // ── Advanced contract analysis (issue #530) ─────────────────────────
+        Commands::Analyze {
+            contract_id,
+            network: net_str,
+            report_format,
+            output,
+        } => {
+            log::debug!(
+                "Command: analyze | contract_id={} network={} format={}",
+                contract_id,
+                net_str,
+                report_format
+            );
+            analyze::run(
+                &cli.api_url,
+                &contract_id,
+                &net_str,
+                &report_format,
+                output.as_deref(),
+            )
+            .await?;
+        }
 
         // ── Bulk contract registration (issue #525) ──────────────────────────
         Commands::BatchRegister {

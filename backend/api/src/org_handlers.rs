@@ -29,12 +29,13 @@ pub async fn create_organization(
         .await
         .map_err(|e| db_internal_error("begin_transaction", e))?;
 
-    let publisher_id: Uuid = sqlx::query_scalar("SELECT id FROM publishers WHERE stellar_address = $1")
-        .bind(&claims.sub)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| db_internal_error("get_publisher_id", e))?
-        .ok_or_else(|| ApiError::unauthorized("Publisher not found for authenticated user"))?;
+    let publisher_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM publishers WHERE stellar_address = $1")
+            .bind(&claims.sub)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| db_internal_error("get_publisher_id", e))?
+            .ok_or_else(|| ApiError::unauthorized("Publisher not found for authenticated user"))?;
 
     // 2. Create organization
     let org: Organization = sqlx::query_as(
@@ -216,14 +217,12 @@ pub async fn invite_member(
     // Check if user is an Admin of the org
     check_org_role(&state.db, id, &claims.sub, OrganizationRole::Admin).await?;
 
-    // Get inviter publisher ID
-    let inviter_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM publishers WHERE stellar_address = $1",
-    )
-    .bind(&claims.sub)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| db_internal_error("get_inviter_id", e))?;
+    let inviter_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM publishers WHERE stellar_address = $1")
+            .bind(&claims.sub)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| db_internal_error("get_inviter_id", e))?;
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + chrono::Duration::days(7);
@@ -279,14 +278,12 @@ pub async fn accept_invitation(
     .map_err(|e| db_internal_error("get_invitation", e))?
     .ok_or_else(|| ApiError::not_found("InvitationNotFound", "Invitation is invalid or expired"))?;
 
-    // 2. Get publisher ID for accepting user
-    let publisher_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM publishers WHERE stellar_address = $1",
-    )
-    .bind(&claims.sub)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| db_internal_error("get_publisher_id", e))?;
+    let publisher_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM publishers WHERE stellar_address = $1")
+            .bind(&claims.sub)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| db_internal_error("get_publisher_id", e))?;
 
     // 3. Add member
     sqlx::query(
